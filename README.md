@@ -130,9 +130,20 @@ constraints from what runs in a browser.
 | layer | what lives there |
 |---|---|
 | **Web** — [radioterapia.ai](https://radioterapia.ai) | an **AI-first hub for medical skills**, and a hub for applications and community contributions. Expert Mode for professionals, Patient Information mode in 12 languages |
-| **Local** | tools that run on the clinic's own machine, where the data never leaves: this kit, auto-contouring, local pseudonymization |
+| **Local** | what runs on the clinic's own machine, because the data must not leave it: this kit, auto-contouring, local pseudonymization |
 | **Mobile** | Android in the room — [PhotoID RT](https://github.com/radioterapia-ai/photoid-rt) |
-| **Hugging Face** | what needs heavy dependencies a common user should not have to install, for quick use in the browser — POP de Elite runs there |
+| **[Hugging Face](https://huggingface.co/Radioterapia-AI)** | what needs heavy dependencies a common user should not have to install, for quick use straight from the browser — [POP de Elite](https://huggingface.co/spaces/Radioterapia-AI/POP) and [Fábrica de Slides](https://huggingface.co/spaces/Radioterapia-AI/Fabrica_de_Slides) |
+
+The layers are not tiers of the same thing, and one move shows why. **ContourLab
+used to run on Hugging Face and does not any more** — the space that carries its
+name is now a signpost pointing to the Local Suite. Auto-contouring reads patient
+images, and patient images belong on the clinic's machine. The capability did not
+improve when it moved; the place did.
+
+That is the rule the whole ecosystem is arranged around: **the layer is chosen by
+what the data is, not by what is convenient.** A tool that never sees patient data
+is better off in a browser, where nobody has to install anything. A tool that does,
+runs where the data already lives.
 
 The web layer is where the community comes in: list your app, share your
 repository, or deploy with us. See **[radioterapia.ai/about](https://radioterapia.ai/about)**.
