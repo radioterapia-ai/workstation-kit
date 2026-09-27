@@ -57,6 +57,24 @@ $fns = $ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.Fu
 $dup = @($fns | Group-Object Name | Where-Object { $_.Count -gt 1 })
 Write-Host ('  parse OK       funcoes: {0}    duplicadas: {1}' -f $fns.Count, $dup.Count)
 if ($dup.Count) { $dup | ForEach-Object { Write-Host ('  DUPLICADA: ' + $_.Name) -ForegroundColor Red }; exit 1 }
+# CHAMADA ORFA: comando com cara de funcao deste arquivo que nao esta definido
+# aqui nem existe no PowerShell. E a checagem que protege contra apagar funcao
+# ainda usada - o parse NAO pega isso, porque chamar funcao inexistente e erro de
+# execucao, nao de sintaxe, e num app de janela oculta o erro morre calado.
+$definidas = @($fns | ForEach-Object { $_.Name })
+$chamadas = @($ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.CommandAst] }, $true) |
+    ForEach-Object { try { $_.GetCommandName() } catch { $null } } |
+    Where-Object { $_ } | Sort-Object -Unique)
+$orfas = @($chamadas | Where-Object {
+    $_ -match '^(Get|Set|New|Test|Invoke|Save|Write|Add|Clear|Format|Show|Update|Remove|Read|Restore|Disable|Enable|Stop|Start)-' -and
+    $definidas -notcontains $_ -and -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+if ($orfas.Count) {
+    Write-Host '  CHAMADA ORFA - funcao chamada e nao definida:' -ForegroundColor Red
+    $orfas | ForEach-Object { Write-Host ('     ' + $_) -ForegroundColor Red }
+    exit 1
+}
+Write-Host ('  nenhuma chamada orfa em {0} comando(s) distinto(s)' -f $chamadas.Count)
+
 $tres = [System.IO.File]::ReadAllBytes($alvo)[0..2] -join ','
 if ($tres -ne '239,187,191') {
     # Regra de ambiente do ecossistema: .ps1 com acento e sem BOM e lido como

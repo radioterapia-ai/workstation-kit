@@ -13,7 +13,6 @@ Add-Type -AssemblyName System.Drawing
 try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 } catch { }
 
 $script:Versao       = '1.0'
-$script:BaseDir      = if ($PSCommandPath) { Split-Path -Parent $PSCommandPath } else { (Get-Location).Path }
 $script:VersaoPreparador = ''
 
 $script:ArquivoBatExterno = ''
@@ -178,7 +177,7 @@ function Set-Status {
 function Set-Ocupado {
     param([bool]$Valor)
     $script:Ocupado = $Valor
-    foreach ($b in @($script:BtnMod1, $script:BtnMod2, $script:BtnMod3,
+    foreach ($b in @($script:BtnMod2, $script:BtnMod3,
                      $script:BtnGrandes, $script:BtnSessao, $script:BtnReiniciar,
                      $script:BtnLimparSel, $script:BtnDesfazer, $script:BtnRestaurar,
                      $script:BtnReverterSes)) {
@@ -289,28 +288,6 @@ function Get-ValorReg {
     try { return (Get-ItemProperty -Path $Caminho -Name $Nome -ErrorAction Stop).$Nome } catch { return $null }
 }
 
-function Get-ConteudoPreparador {
-
-    return ''
-}
-
-function Save-Preparador {
-    try {
-        if (-not (Test-Path -LiteralPath $script:PastaEstado)) {
-            New-Item -ItemType Directory -Path $script:PastaEstado -Force | Out-Null
-        }
-
-        $conteudo = Get-ConteudoPreparador
-        if (-not "$conteudo".Trim()) { return $null }
-        $destino = Join-Path $script:PastaEstado 'Preparar_Workstation.bat'
-        [System.IO.File]::WriteAllText($destino, $conteudo, [System.Text.Encoding]::GetEncoding(1252))
-        return $destino
-    } catch {
-        Write-Log ('Nao foi possivel gravar a rotina de preparacao: {0}' -f $_.Exception.Message) 'CRITICO'
-        return $null
-    }
-}
-
 function Test-ArquivoEmUso {
     param([string]$Caminho)
     if (-not (Test-Path -LiteralPath $Caminho)) { return $false }
@@ -319,154 +296,6 @@ function Test-ArquivoEmUso {
         $fs.Close()
         return $false
     } catch { return $true }
-}
-
-function Test-PortalEmDia {
-    param([string]$Nome)
-    $local = Join-Path $script:PastaClinica $Nome
-    if (-not (Test-Path -LiteralPath $local)) {
-        Add-Achado 'ALERTA' ('{0} ausente no disco local' -f $Nome) 'Rode o Modulo 1 (Preparar ambiente).' 'Ambiente' 'Alto'
-        return
-    }
-    $fl = Get-Item -LiteralPath $local -ErrorAction SilentlyContinue
-    $aberto = Test-ArquivoEmUso -Caminho $local
-
-    $rede = Join-Path $script:PastaClinicaRede $Nome
-    $fr = $null
-    try { if (Test-Path -LiteralPath $rede -ErrorAction Stop) { $fr = Get-Item -LiteralPath $rede -ErrorAction Stop } } catch { }
-
-    if (-not $fr) {
-        Write-Log ('{0}: {1}, alterado em {2:dd/MM/yyyy HH:mm} (rede indisponivel para comparar)' -f $Nome, (Format-Bytes $fl.Length), $fl.LastWriteTime) 'DADO'
-        return
-    }
-
-    Write-Log ('{0}' -f $Nome) 'DADO'
-    Write-Log ('   C: ...: {0,10}  {1:dd/MM/yyyy HH:mm}{2}' -f (Format-Bytes $fl.Length), $fl.LastWriteTime, $(if ($aberto) { '   [ABERTO AGORA]' } else { '' })) 'DADO'
-    Write-Log ('   rede .: {0,10}  {1:dd/MM/yyyy HH:mm}' -f (Format-Bytes $fr.Length), $fr.LastWriteTime) 'DADO'
-
-    $difMin = [Math]::Round(($fr.LastWriteTime - $fl.LastWriteTime).TotalMinutes)
-
-    if ($aberto) {
-        Add-Achado 'ALERTA' ('{0} esta aberto agora nesta maquina' -f $Nome) 'Enquanto estiver aberto, a preparacao nao consegue substituir a copia local. Feche o Excel e rode o Modulo 1 de novo.' 'Ambiente' 'Alto'
-        return
-    }
-    if ($difMin -gt 2) {
-        Add-Achado 'ALERTA' ('{0}: a copia do C: esta {1} atras da rede' -f $Nome, $(if ($difMin -ge 1440) { "$([Math]::Round($difMin/1440)) dia(s)" } else { "$difMin minuto(s)" })) 'A copia local nao foi atualizada. Se o arquivo estava aberto durante a preparacao, feche o Excel e rode o Modulo 1 de novo.' 'Ambiente' 'Alto'
-    } elseif ($difMin -lt -2) {
-        Add-Achado 'ALERTA' ('{0}: a copia do C: esta MAIS NOVA que a da rede' -f $Nome) 'Alguem abriu e salvou o arquivo nesta maquina. A preparacao nao sobrescreve por seguranca. Se a versao boa e a da rede, renomeie a copia local e rode o Modulo 1 de novo.' 'Ambiente' 'Alto'
-    } else {
-        Add-Achado 'OK' ('{0} em dia com a rede' -f $Nome) '' 'Ambiente'
-    }
-}
-
-function Invoke-PrepararAmbiente {
-    Write-Titulo 'Modulo 1 - Preparar ambiente de radioterapia'
-
-    $bat = $null
-    if ($script:ArquivoBatExterno -and (Test-Path -LiteralPath $script:ArquivoBatExterno)) {
-        $bat = $script:ArquivoBatExterno
-        Write-Log ('Usando a versao externa configurada: {0}' -f $bat) 'DADO'
-    } else {
-        $bat = Save-Preparador
-        if (-not $bat) {
-
-            Write-Log 'Esta versao nao traz rotina de preparacao embutida.' 'DADO'
-            Write-Log 'O Modulo 1 roda o script de preparacao que VOCE indicar.' 'DADO'
-            Write-Log 'Selecione um arquivo .bat ou .cmd de preparacao.' 'ACAO'
-            $dlg = New-Object System.Windows.Forms.OpenFileDialog
-            $dlg.Filter = 'Script de preparacao (*.bat;*.cmd)|*.bat;*.cmd'
-            $dlg.Title  = 'Selecione o script de preparacao de ambiente'
-            if ($dlg.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
-                Write-Log 'Preparacao cancelada.' 'ALERTA'
-                return
-            }
-            $bat = $dlg.FileName
-        } else {
-            Write-Log ('Rotina embutida no aplicativo (versao {0}), gravada em ANSI 1252.' -f $script:VersaoPreparador) 'DADO'
-        }
-    }
-
-    Write-Log ('Executando: {0}' -f $bat)
-    Write-Log 'A saida original do script aparece abaixo, linha a linha.' 'DADO'
-    Write-Log ''
-
-    $saida = Join-Path $env:TEMP ('kitrt_mod1_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
-    $comando = '/c ""{0}" < nul > "{1}" 2>&1"' -f $bat, $saida
-    $impressas = 0
-
-    try {
-        $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList $comando -WindowStyle Hidden -PassThru
-    } catch {
-        Write-Log ('Falha ao iniciar o script: {0}' -f $_.Exception.Message) 'CRITICO'
-        return
-    }
-
-    $lerSaida = {
-        if (-not (Test-Path -LiteralPath $saida)) { return }
-        try {
-            $fs = New-Object System.IO.FileStream($saida, [System.IO.FileMode]::Open,
-                                                  [System.IO.FileAccess]::Read,
-                                                  [System.IO.FileShare]::ReadWrite)
-            $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::GetEncoding(1252))
-            $todo = $sr.ReadToEnd()
-            $sr.Close(); $fs.Close()
-            $linhas = $todo -split "`r?`n"
-            for ($i = $impressas; $i -lt $linhas.Count; $i++) {
-                $l = $linhas[$i]
-                if ($i -eq ($linhas.Count - 1) -and -not $proc.HasExited) { break }
-                if ($l -match '\[ERRO|\[AVISO|\[ALERTA') { Write-Log $l.Trim() 'ALERTA' }
-                elseif ($l -match '\[SUCESSO|\[ATUALIZADO|sucesso')       { Write-Log $l.Trim() 'DADO' }
-                elseif ($l.Trim())                                        { Write-Log $l.TrimEnd() 'BRUTO' }
-                $script:impressasTmp = $i + 1
-            }
-        } catch { }
-    }
-
-    $script:impressasTmp = 0
-    while (-not $proc.HasExited) {
-        & $lerSaida
-        $impressas = $script:impressasTmp
-        Pump
-        Start-Sleep -Milliseconds 250
-        if ($script:Cancelar) {
-            try { $proc.Kill() } catch { }
-            Write-Log 'Preparacao interrompida pelo usuario.' 'ALERTA'
-            break
-        }
-    }
-    Start-Sleep -Milliseconds 300
-    & $lerSaida
-
-    Write-Log ''
-    if ($script:Cancelar) { return }
-    Write-Log 'Preparacao de ambiente concluida.' 'OK'
-    Write-Log ('Saida completa salva em: {0}' -f $saida) 'DADO'
-
-    $pops = Join-Path $script:PastaClinica 'POPs - RADIOTERAPIA'
-    if (Test-Path -LiteralPath $pops) {
-        $arq = @(Get-ChildItem -LiteralPath $pops -File -Recurse -ErrorAction SilentlyContinue)
-        if ($arq.Count -gt 0) {
-            $recente = ($arq | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
-            Write-Log ('POPs - RADIOTERAPIA: {0} arquivo(s), {1}, mais recente de {2:dd/MM/yyyy}' -f $arq.Count, (Format-Bytes (($arq | Measure-Object Length -Sum).Sum)), $recente.LastWriteTime) 'OK'
-        } else {
-            Write-Log 'POPs - RADIOTERAPIA: pasta criada, mas vazia. Confira o caminho na rede.' 'ALERTA'
-        }
-    }
-
-    $kit = Join-Path $script:PastaClinica 'UTILITARIOS\PREPARAR WORKSTATION RADIOTERAPIA'
-    if (Test-Path -LiteralPath $kit) {
-        $arq = @(Get-ChildItem -LiteralPath $kit -File -Recurse -ErrorAction SilentlyContinue)
-        if ($arq.Count -gt 0) {
-            $recente = ($arq | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
-            Write-Log ('Kit de Suporte no C:: {0} arquivo(s), mais recente {1} de {2:dd/MM/yyyy HH:mm}' -f $arq.Count, $recente.Name, $recente.LastWriteTime) 'OK'
-        }
-    }
-
-    Write-Log '' 'DADO'
-    Write-Log 'Conferencia dos portais (C: contra a rede):' 'DADO'
-    foreach ($p in @('PORTAL - RADIOTERAPIA.xlsb', 'PORTAL - FICHA TÉCNICA.xlsb')) {
-        Test-PortalEmDia -Nome $p
-    }
 }
 
 $script:Protegidos = 'wfica32|wfcrun32|CDViewer|SelfService|Receiver|concentr|CtxWebHelper|AuthManSvr|redirector|HdxRtcEngine|CtxCFRUI|Citrix|tasy|TasyAgent|CentBrowser|javaw|^java$|jp2launcher|Wheb|Philips|CcmExec|ntrtscan|tmlisten|TMBM|PccNTMon|ShowMsg|smartscreen|unsecapp|SearchProtocolHost|SearchFilterHost|DSASvc|QualysAgent|stAgent|Cortex|cyserver|cytray|cyvera|traps|LsAgent|Quest|OnDemand|ODMActiveDirectory|SecureConnector|ARIA|Eclipse|Varian|Vitrea|MIM|MOSAIQ|RayStation|Monaco|Velocity|Osirix|Horos|Weasis|dicom|PACS|EXCEL|WINWORD|POWERPNT|OUTLOOK|MSACCESS|onenote|StickyNot|msedge|chrome|firefox|iexplore|notepad|wordpad|Acrobat|AcroRd32|AnyConnect|GlobalProtect|FortiClient|Pulse|CcmExec|CmRcService|ccmsetup|CSFalcon|CSAgent|Sophos|SAVService|^mfe|masvc|macmnsvc|McShield|ccSvcHst|SepMaster|ZSA|stAgent|nsdiag|ivanti|LANDesk|Forcepoint|splunk|nxlog|MsMpEng|NisSrv|SecurityHealth|Acronis|^mms$|Veeam|CommVault|^cvd$|^CvMountd$|TrueImage|Macrium|^Reflect|ShadowProtect|Arcserve|Datto|Carbonite|IDriveService|Realtek|RtkAud|IDTNC|Synaptics|igfx|nvcontainer|audiodg|System|Idle|Registry|smss|csrss|wininit|winlogon|^services$|lsass|svchost|fontdrvhost|dwm|explorer|RuntimeBroker|sihost|ctfmon|taskhostw|dllhost|conhost|WmiPrvSE|powershell|pwsh|LogonUI|SearchIndexer'
@@ -1294,7 +1123,7 @@ function Invoke-InvOfficeExcel {
 function Invoke-InvPastaClinica {
     Write-Titulo 'Inventario · pasta clinica'
     if (-not (Test-Path -LiteralPath $script:PastaClinica)) {
-        Add-Achado 'ALERTA' ('{0} nao existe' -f $script:PastaClinica) 'Rode o Modulo 1 (Preparar ambiente).' 'Ambiente' 'Alto'
+        Add-Achado 'ALERTA' ('{0} nao existe' -f $script:PastaClinica) 'Verifique a pasta de trabalho configurada.' 'Ambiente' 'Alto'
         return
     }
     $tot = Get-TamanhoPasta -Caminho $script:PastaClinica -TimeoutSeg 120
@@ -1560,17 +1389,6 @@ function Measure-RespostaHttp {
         UrlFinal = $urlFinal; CertificadoInvalido = $certRuim
         Processamento = $(if ($htMed -ge 0 -and $tcpMed -ge 0) { [Math]::Max(0, $htMed - $tcpMed) } else { -1 })
         Instavel = $(if ($htMax -ge 0 -and $htMin -ge 0) { (($htMax - $htMin) -gt 2000) } else { $false })
-    }
-}
-
-function Get-TasyProcessos {
-    $nomes = @('tasy', 'TasyAgent', 'tasy-agentw', 'TasyAgentTray', 'javaw', 'java', 'jp2launcher', 'CentBrowser')
-    $ps = @(Get-Process -Name $nomes -ErrorAction SilentlyContinue)
-    [pscustomobject]@{
-        Rodando = ($ps.Count -gt 0)
-        Qtd     = $ps.Count
-        Memoria = $(if ($ps.Count -gt 0) { ($ps | Measure-Object WorkingSet64 -Sum).Sum } else { 0 })
-        Nomes   = @($ps | Select-Object -ExpandProperty ProcessName -Unique)
     }
 }
 
@@ -4630,25 +4448,23 @@ $lateral.Dock = 'Left'; $lateral.Width = 292; $lateral.BackColor = $script:Cor.P
 $lateral.Padding = New-Object System.Windows.Forms.Padding(0,10,0,0)
 $lateral.AutoScroll = $true
 
-$script:BtnMod1 = New-Botao -Texto '1 · Preparar ambiente' -Y 16
-$script:BtnMod2 = New-Botao -Texto '2 · Inventario e diagnostico' -Y 66
-$script:BtnMod3 = New-Botao -Texto '3 · Limpeza segura' -Y 116
+$script:BtnMod2 = New-Botao -Texto 'Diagnostico e inventario'     -Y 16
+$script:BtnMod3 = New-Botao -Texto 'Limpeza'                      -Y 66
+$script:BtnGrandes = New-Botao -Texto 'Arquivos e pastas grandes' -Y 116
+$script:BtnSessao  = New-Botao -Texto 'Otimizar a sessao de agora' -Y 166
+$script:BtnPersist = New-Botao -Texto 'O que sobrevive ao logoff' -Y 216
 
-$script:BtnGrandes = New-Botao -Texto '4 · Arquivos e pastas grandes' -Y 166
-$script:BtnSessao  = New-Botao -Texto '5 · Otimizar sessao atual'     -Y 216
-$script:BtnPersist = New-Botao -Texto '6 · O que sobrevive ao logoff' -Y 266
-
-$sec3 = New-Secao -Texto 'REVERTER E FECHAR O CICLO' -Y 330
-$script:BtnRestaurar = New-Botao -Texto 'Restaurar sessao (reabrir)' -Y 352 -Altura 32 -Secundario -Cor $script:Cor.Titulo
-$script:BtnDesfazer  = New-Botao -Texto 'Desfazer otimizacoes'    -Y 390 -Altura 32 -Secundario -Cor $script:Cor.Acao
-$script:BtnReiniciar = New-Botao -Texto 'Reiniciar o computador'  -Y 428 -Altura 32 -Secundario -Cor $script:Cor.Alerta
+$sec3 = New-Secao -Texto 'REVERTER E FECHAR O CICLO' -Y 280
+$script:BtnRestaurar = New-Botao -Texto 'Restaurar sessao (reabrir)' -Y 302 -Altura 32 -Secundario -Cor $script:Cor.Titulo
+$script:BtnDesfazer  = New-Botao -Texto 'Desfazer otimizacoes'    -Y 340 -Altura 32 -Secundario -Cor $script:Cor.Acao
+$script:BtnReiniciar = New-Botao -Texto 'Reiniciar o computador'  -Y 378 -Altura 32 -Secundario -Cor $script:Cor.Alerta
 
 $lblRodape = New-Object System.Windows.Forms.Label
 $lblRodape.Text = "Ferramenta de apoio tecnico.`r`nNao validada para uso clinico.`r`nNenhuma acao exige administrador.`r`nTudo o que e desativado volta pelo Desfazer."
-$lblRodape.SetBounds(18, 480, 244, 68); $lblRodape.ForeColor = $script:Cor.Fraco
+$lblRodape.SetBounds(18, 430, 244, 68); $lblRodape.ForeColor = $script:Cor.Fraco
 $lblRodape.Font = New-Object System.Drawing.Font('Segoe UI', 8)
 
-$lateral.Controls.AddRange(@($script:BtnMod1, $script:BtnMod2, $script:BtnMod3,
+$lateral.Controls.AddRange(@($script:BtnMod2, $script:BtnMod3,
                              $script:BtnGrandes, $script:BtnSessao, $script:BtnPersist,
                              $sec3, $script:BtnRestaurar, $script:BtnDesfazer, $script:BtnReiniciar, $lblRodape))
 
@@ -4817,7 +4633,6 @@ function Invoke-ComProtecao {
     }
 }
 
-$script:BtnMod1.Add_Click({ Invoke-ComProtecao { Invoke-PrepararAmbiente } 'Modulo 1' })
 $script:BtnMod2.Add_Click({ Invoke-ComProtecao { Invoke-InventarioDiagnostico } 'Modulo 2' })
 $script:BtnMod3.Add_Click({ Invoke-ComProtecao { Invoke-Modulo3Analise } 'Modulo 3' })
 $script:BtnGrandes.Add_Click({ Invoke-ComProtecao { Invoke-ArquivosGrandes } 'Modulo 4' })
@@ -4888,8 +4703,7 @@ $script:Form.Add_Shown({
     Write-Log 'Kit de Suporte pronto.' 'OK'
     Write-Log ('Maquina {0}  ·  usuario {1}  ·  {2:dd/MM/yyyy HH:mm}' -f $env:COMPUTERNAME, $env:USERNAME, (Get-Date)) 'DADO'
     Write-Log ''
-    Write-Log 'Modulo 1: prepara o ambiente (pastas, portais, mapeamentos, PDFtk, fonte).' 'ACAO'
-    Write-Log 'Modulo 2: inventario da maquina + diagnostico do que da para resolver aqui.' 'ACAO'
+        Write-Log 'Modulo 2: inventario da maquina + diagnostico do que da para resolver aqui.' 'ACAO'
     Write-Log 'Modulo 3: analisa, deixa tudo marcado e resolve em um clique ("Aplicar tudo").' 'ACAO'
     Write-Log 'Modulo 4: os 10 maiores arquivos e as 10 maiores pastas do C:, com link para o Explorer.' 'ACAO'
     Write-Log 'Modulo 5: deixa a sessao de agora leve, preservando Citrix, prontuario e navegadores.' 'ACAO'
