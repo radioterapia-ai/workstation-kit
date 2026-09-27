@@ -1,0 +1,43 @@
+# Padroes liberados na conferencia de vazamento (tools\Verificar-Vazamento.ps1).
+#
+# Um padrao de expressao regular por linha. Linha vazia e linha comecando com #
+# sao ignoradas.
+#
+# REGRA DESTA LISTA: liberar exige escrever o MOTIVO no comentario acima da linha.
+# Sem o motivo, a lista vira depositario de tudo o que incomoda, e a conferencia
+# deixa de conferir. Se voce nao consegue escrever por que aquilo e legitimo, o
+# lugar do achado nao e aqui: e fora do codigo.
+#
+# O que NAO se libera, em nenhuma circunstancia: dominio corporativo de clinica ou
+# hospital, nome de fileserver, IP de rede interna de alguem, nome de estacao de
+# trabalho, endereco de portal de prontuario.
+
+# Microsoft: o aplicativo cita produtos, chaves de registro e servicos da
+# plataforma. Nenhum desses nomes e de infraestrutura de terceiro.
+(?i)\bmicrosoft\.com\b
+(?i)\bwindows\.com\b
+(?i)\bwindowsupdate\.com\b
+(?i)\blive\.com\b
+(?i)\boffice\.com\b
+(?i)\boffice365\.com\b
+(?i)\bsharepoint\.com\b
+(?i)\bmsftconnecttest\.com\b
+
+# Loopback e teste de alcance. 127.0.0.1 e da propria maquina, e a suite de teste
+# usa ping para criar uma arvore de processos de verdade.
+(?i)\b127\.0\.0\.1\b
+(?i)\blocalhost\b
+
+# UNC de forma generica que o codigo usa como PADRAO, nao como destino:
+#   \\.\  e o namespace de dispositivo do Windows
+#   \\?\  e o prefixo de caminho longo
+\\\\[.?]\\
+
+# Dominios de exemplo reservados pela RFC 2606, para documentacao. Se um dia um
+# documento precisar mostrar um caminho de rede, e daqui que o nome sai.
+(?i)\bexample\.(com|net|org)\b
+
+# Fabricantes de radioterapia e de software que o kit reconhece pelo NOME DO
+# PROCESSO. Se um dia um nome de processo contiver ponto e parecer dominio, a
+# liberacao vem para ca com o nome do fabricante escrito.
+# (vazio por enquanto)

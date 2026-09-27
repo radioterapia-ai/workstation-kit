@@ -1,0 +1,113 @@
+# Workstation Kit
+
+Prepara, diagnostica e otimiza estações de trabalho Windows. **Roda sem privilégio
+de administrador**, em máquina corporativa gerenciada.
+
+Serve qualquer computador — de clínica, de consultório, de recepção ou pessoal —, em
+qualquer país, preservando software de radioterapia de qualquer fabricante.
+
+Versão atual: **1.0** · PowerShell 5.1 + WinForms
+
+> **Estado: fork recém-aberto.** O aplicativo roda e a suíte de teste passa, mas a
+> camada de idioma ainda não existe e 23 entradas de lista de proteção estão por
+> cobrir. Ver `docs/PENDENCIAS.md`, que separa o que foi verificado do que ainda
+> não foi.
+
+---
+
+## Distribuição
+
+Dois arquivos, na mesma pasta:
+
+```
+Start_WorkstationKit.cmd     o atalho que abre o app
+WorkstationKit.ps1           o aplicativo inteiro
+```
+
+O `.ps1` é **um arquivo só**, e é deliberado: a distribuição é cópia de arquivo, não
+instalação. No projeto de origem, atualizar a cópia na pasta da rede era o que
+distribuía a correção para 11 máquinas sem ninguém passar de mesa em mesa.
+
+---
+
+## Os módulos
+
+| | |
+|---|---|
+| **1 · Preparar ambiente** | roda o script de preparação que você indicar |
+| **2 · Inventário e diagnóstico** | retrato da máquina, e o que dá para resolver |
+| **3 · Limpeza segura** | analisa, marca o que é seguro, aplica |
+| **4 · Arquivos e pastas grandes** | somente leitura; lista e dá veredicto |
+| **5 · Otimizar a sessão de agora** | reversível no próximo logon |
+| **6 · Diagnóstico de persistência** | o que volta sozinho a cada logon |
+
+O Módulo 5 é o mais usado, e o mais rápido: no projeto de origem o «Aplicar» caiu de
+26,6 s para 2,6 s, medido em máquina com 353 processos.
+
+---
+
+## O que ele não faz
+
+- não exige administrador, em nenhuma função
+- não desinstala nada, não mexe em serviço, não altera `HKLM`
+- não apaga arquivo fora de pasta de cache do próprio perfil — o Módulo 4 lista e dá
+  veredicto, quem apaga é você, pelo Explorer
+- não encerra o que alguém está usando: Citrix, prontuário, banco de imagem,
+  planejamento e o acesso remoto do TI estão em lista de proteção, e o Módulo 5
+  confere cada processo **ao vivo** antes de encerrar, um por um
+- não contorna antivírus, e não compila código em tempo de execução
+
+---
+
+## Idioma
+
+| Camada | Idioma |
+|---|---|
+| texto que o usuário lê | inglês, português e espanhol |
+| código, comentário e documentação | português do Brasil |
+
+A segunda linha é a regra do ecossistema em que este projeto vive e não muda por o
+produto ser internacional. Ver `CLAUDE.md`.
+
+---
+
+## Origem
+
+Fork do `WORKSTATION_RT`, aberto em 27/09/2026 a partir do commit `ad13e33`. Aquele
+projeto continua existindo e continua sendo a ferramenta da clínica do autor.
+
+O repositório foi criado **sem histórico compartilhado**, de propósito: o `.ps1` de
+origem tinha 47 ocorrências de identificador de infraestrutura de um hospital real —
+domínio, fileserver, dois IPs internos, cinco hostnames. Um clone gravaria isso na
+história deste projeto para sempre, e história não se desfaz depois.
+
+`docs/PROVENIENCIA.md` tem a lista do que saiu, o que ficou no lugar, e o defeito que
+a própria remoção quase criou.
+
+---
+
+## Antes de entregar qualquer mudança
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Testar-Sessao.ps1
+```
+
+36 casos, e cada bloco nomeia o defeito real que ele pega. São **testes negativos**:
+montam o caso em que a proteção precisa falhar se estiver quebrada.
+
+> Teste positivo não vê proteção que parou de proteger.
+
+---
+
+## Documentação
+
+| Arquivo | Para quê |
+|---|---|
+| `CLAUDE.md` | como trabalhar neste código |
+| `docs/REGRAS-DE-SEGURANCA.md` | o que nunca se toca e por quê |
+| `docs/PROVENIENCIA.md` | de onde veio e o que saiu |
+| `docs/PENDENCIAS.md` | o trabalho da versão universal, em ordem |
+
+---
+
+Toda saída deste aplicativo é um rascunho sujeito a revisão.

@@ -1,0 +1,18 @@
+# Saida de execucao do kit. Pode trazer nome de maquina, de usuario e de arquivo.
+Inventario_*.csv
+Inventory_*.csv
+Inventario_*.csv
+*.log
+estado.json
+
+# Temporarios de edicao do batch embutido (extrair, editar, reinjetar)
+preparador-extraido.bat
+*.tmp
+*.bak
+
+# Montagem e empacotamento: nao e entrega, e regenerado
+_montagem/
+
+# Windows
+Thumbs.db
+desktop.ini
