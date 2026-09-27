@@ -41,3 +41,17 @@
 # PROCESSO. Se um dia um nome de processo contiver ponto e parecer dominio, a
 # liberacao vem para ca com o nome do fabricante escrito.
 # (vazio por enquanto)
+
+# Perfis publicos do proprio ecossistema, citados no README e no NOTICE. Sao
+# enderecos que existem para ser divulgados - o oposto do que este varredor
+# protege, que e infraestrutura interna de terceiro.
+(?i)\bradioterapia\.ai\b
+(?i)\bdrhenriquebraga\.com\.br\b
+(?i)\bwww\.instagram\.com\b
+(?i)\bwww\.linkedin\.com\b
+(?i)\bgithub\.com\b
+(?i)\bhuggingface\.co\b
+
+# Citados na licenca Apache 2.0 e no NOTICE.
+(?i)\bapache\.org\b
+(?i)\bwww\.apache\.org\b

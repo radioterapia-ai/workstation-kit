@@ -4379,7 +4379,7 @@ function New-Botao {
 }
 
 $script:Form = New-Object System.Windows.Forms.Form
-$script:Form.Text          = 'Kit de Suporte - Estacoes de Radioterapia'
+$script:Form.Text          = 'Workstation Kit'
 $script:Form.Size          = New-Object System.Drawing.Size(1240, 820)
 $script:Form.MinimumSize   = New-Object System.Drawing.Size(980, 620)
 $script:Form.StartPosition = 'CenterScreen'
@@ -4390,7 +4390,7 @@ $script:Form.Font          = New-Object System.Drawing.Font('Segoe UI', 9)
 $cab = New-Object System.Windows.Forms.Panel
 $cab.Dock = 'Top'; $cab.Height = 58; $cab.BackColor = $script:Cor.Painel
 $lblTit = New-Object System.Windows.Forms.Label
-$lblTit.Text = 'Kit de Suporte  ·  Estacoes de Radioterapia'
+$lblTit.Text = 'Workstation Kit  ·  diagnostico, limpeza e otimizacao de sessao'
 $lblTit.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 13)
 $lblTit.ForeColor = $script:Cor.Texto
 $lblTit.SetBounds(18, 9, 620, 24)

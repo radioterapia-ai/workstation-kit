@@ -1,143 +1,184 @@
+<p align="center">
+  <img src="docs/img/banner.png" alt="Workstation Kit — diagnose, clean and optimize the open Windows session" width="100%">
+</p>
+
 # Workstation Kit
 
-Prepara, diagnostica e otimiza estações de trabalho Windows. **Roda sem privilégio
-de administrador**, em máquina corporativa gerenciada.
+> **Support tool. Not validated for clinical use.**
+> This is not a medical device. It does not diagnose patients, does not measure,
+> does not interpret medical images and does not replace professional judgement.
+> It is a Windows utility. See [NOTICE](NOTICE).
 
-Serve qualquer computador — de clínica, de consultório, de recepção ou pessoal —, em
-qualquer país.
+Diagnoses, cleans and optimizes the **open Windows session**. A single PowerShell
+file, no installer, and **no administrator privilege required**.
 
-> **É um app de Windows, e é para rodar logo após logar na máquina** — antes de
-> abrir o trabalho do dia. Rodar no meio do dia pode encerrar trabalho em curso; o
-> app mede o momento e avisa quando não é a hora.
->
-> Ele conhece software de radioterapia de vários fabricantes porque foi ali que
-> nasceu, e essa proteção continua valendo. Mas não é um app de radioterapia: é o
-> que prepara a máquina antes de ela ser usada, para qualquer trabalho.
-
-Versão atual: **1.0** · PowerShell 5.1 + WinForms
-
-> **Estado: fork recém-aberto.** O aplicativo roda e a suíte de teste passa, mas a
-> camada de idioma ainda não existe e 23 entradas de lista de proteção estão por
-> cobrir. Ver `docs/PENDENCIAS.md`, que separa o que foi verificado do que ainda
-> não foi.
+Part of the **[Radioterapia.AI](https://radioterapia.ai)** ecosystem.
 
 ---
 
-## Distribuição
+## What it is, and when to run it
 
-Dois arquivos, na mesma pasta:
+It is a **Windows app**, not a radiotherapy app. It prepares the machine so the
+day's work can start — which is why it is meant to run **right after you log in**,
+before opening whatever you came to the computer to use.
 
-```
-Start_WorkstationKit.cmd     o atalho que abre o app
-WorkstationKit.ps1           o aplicativo inteiro
-```
+Running it **in the middle of the day** can close work in progress. The app
+measures that and says so: how long the session has been open, whether a batch is
+running, and whether an application with an open window is already in use.
 
-O `.ps1` é **um arquivo só**, e é deliberado: a distribuição é cópia de arquivo, não
-instalação. No projeto de origem, atualizar a cópia na pasta da rede era o que
-distribuía a correção para 11 máquinas sem ninguém passar de mesa em mesa.
+> The protection lists are the **net**, for anyone who runs it at the wrong time.
+> The main mechanism is telling you the moment is wrong, with the reason in front
+> of you, and letting you decide.
 
----
+<p align="center">
+  <img src="docs/img/tela.png" alt="The application window: module buttons on the left, coloured log on the right" width="100%">
+</p>
 
-## Os módulos
+## Nothing is permanent, except the files you choose to delete
+
+| what | comes back through |
+|---|---|
+| closed processes, stopped tasks, CPU priority, compacted memory | the next logon |
+| items removed from startup, performance tweaks | the **Undo** button |
+| old Downloads | the Recycle Bin |
+| temporary files and caches | they do not come back — that is the cleanup |
+
+The Recycle Bin is emptied **first**, and what leaves Downloads goes into it
+afterwards, which is why it remains recoverable.
+
+**It does not uninstall anything.** When a program looks dispensable, the app
+**ends the process** instead of uninstalling it: the memory comes back now, and at
+the next logon everything is in place again. Detection that would require a
+permanent action — a dead network mapping, an orphaned credential — comes out as a
+**finding with the command**, for you to decide.
+
+Every action group has a declared way back, and the test suite reads the
+execution list from the source and fails if a new group appears without one.
+
+## The modules
 
 | | |
 |---|---|
-| **Diagnóstico** | retrato da máquina, e o que dá para resolver |
-| **Arquivos grandes** | somente leitura; lista e dá veredicto |
-| **Limpeza** | temporários, caches e Downloads antigos |
-| **Otimizar sessão** | encerra o que não está em uso, ajusta prioridade, compacta memória |
-| **Persistência** | o que volta sozinho a cada logon |
+| **Diagnostics and inventory** | a portrait of the machine, and what can be resolved |
+| **Large files and folders** | read-only; lists and gives a verdict |
+| **Cleanup** | temporary files, caches, old Downloads |
+| **Optimize the session** | closes what is not in use, adjusts priority, compacts memory |
+| **Persistence** | what comes back on its own at every logon |
 
-Nomes em vez de números: o módulo de preparação de ambiente saiu, e renumerar o resto
-quebraria toda referência.
+The log is the product: eight levels, each with its own colour, timestamps, and
+the reason written next to every decision. What you see on screen is what you can
+copy into a support ticket.
 
-Antes de aplicar, a Limpeza e o Otimizar sessão dizem se **é a hora certa**: quanto
-tempo a sessão está aberta, se há carga em andamento, e se o trabalho do dia já
-começou.
+## What it will not do
 
-## Nada é definitivo, exceto os arquivos que você apagar
+- does not require administrator, in any function
+- does not uninstall anything, does not touch `HKLM`
+- does not delete files outside cache folders in your own profile — the large-file
+  module lists and gives a verdict; **you** delete, through Explorer
+- does not clean the registry: there is no published evidence of measurable gain,
+  and there is real risk
+- does not download anything and does not update itself
+- does not work around antivirus software
 
-| o que | volta por |
-|---|---|
-| processos encerrados, tarefas paradas, prioridade de CPU, memória compactada | o próximo logon |
-| itens tirados da inicialização, ajustes de desempenho | o botão **Desfazer** |
-| Downloads antigos | a Lixeira |
-| temporários e caches | não voltam — é a limpeza |
+## Protecting work in progress
 
-A Lixeira é esvaziada **primeiro**, e o que sai de Downloads vai para ela depois; por
-isso continua recuperável.
+The app carries lists of processes it will never close. They exist because this
+tool was born inside a radiotherapy service, where closing the wrong process does
+not mean an inconvenience — it means interrupting a treatment session.
 
-**Não desinstala nada.** Quando um programa parece dispensável, o app **encerra o
-processo** em vez de desinstalar: libera a memória agora, e no próximo logon está tudo
-de volta. Detecção que exigiria ação definitiva — mapeamento de rede morto, credencial
-órfã — sai como achado, com o comando, para você decidir.
+Those lists cover treatment planning systems, record-and-verify systems, image
+viewers, electronic health records, published-application clients, remote-access
+tools used by IT, backup agents and corporate security agents, from several
+vendors. They are the only part of this app that touches the medical world, and
+they cost nothing to anyone who does not need them.
 
----
+> The direction of the error is not symmetric. Protecting something that did not
+> need it leaves dead weight. Failing to protect something that did interrupts
+> someone's work. Doubt is resolved by protecting.
 
-## O que ele não faz
+`docs/PENDENCIAS.md` lists, openly, what the coverage does **not** include yet.
 
-- não exige administrador, em nenhuma função
-- não desinstala nada e não altera `HKLM`
-- não limpa registro: não há evidência publicada de ganho mensurável, e há risco real
-- não baixa nada e não se atualiza sozinho
-- não apaga arquivo fora de pasta de cache do próprio perfil — o Módulo 4 lista e dá
-  veredicto, quem apaga é você, pelo Explorer
-- não encerra o que alguém está usando: Citrix, prontuário, banco de imagem,
-  planejamento e o acesso remoto do TI estão em lista de proteção, e o Módulo 5
-  confere cada processo **ao vivo** antes de encerrar, um por um
-- não contorna antivírus, e não compila código em tempo de execução
+## Status
 
----
+Early. The application runs and the test suite is green, but the language layer
+does not exist yet and there are list entries still to cover. This repository is
+open so the work can be followed, not because it is finished.
 
-## Idioma
+## Running it
 
-| Camada | Idioma |
-|---|---|
-| texto que o usuário lê | inglês, português e espanhol |
-| código, comentário e documentação | português do Brasil |
+```
+Start_WorkstationKit.cmd
+```
 
-A segunda linha é a regra do ecossistema em que este projeto vive e não muda por o
-produto ser internacional. Ver `CLAUDE.md`.
+Both files must sit in the same folder. PowerShell 5.1, Windows 10 or 11.
 
----
-
-## Origem
-
-Fork do `WORKSTATION_RT`, aberto em 27/09/2026 a partir do commit `ad13e33`. Aquele
-projeto continua existindo e continua sendo a ferramenta da clínica do autor.
-
-O repositório foi criado **sem histórico compartilhado**, de propósito: o `.ps1` de
-origem tinha 47 ocorrências de identificador de infraestrutura de um hospital real —
-domínio, fileserver, dois IPs internos, cinco hostnames. Um clone gravaria isso na
-história deste projeto para sempre, e história não se desfaz depois.
-
-`docs/PROVENIENCIA.md` tem a lista do que saiu, o que ficou no lugar, e o defeito que
-a própria remoção quase criou.
-
----
-
-## Antes de entregar qualquer mudança
+Before delivering any change:
 
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Testar-Sessao.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Verificar-Vazamento.ps1
 ```
 
-36 casos, e cada bloco nomeia o defeito real que ele pega. São **testes negativos**:
-montam o caso em que a proteção precisa falhar se estiver quebrada.
-
-> Teste positivo não vê proteção que parou de proteger.
-
 ---
 
-## Documentação
+## The ecosystem
 
-| Arquivo | Para quê |
+**[Radioterapia.AI](https://radioterapia.ai)** is built across four layers, and
+they are deliberately separate — what runs on a clinical workstation has different
+constraints from what runs in a browser.
+
+| layer | what lives there |
 |---|---|
-| `CLAUDE.md` | como trabalhar neste código |
-| `docs/REGRAS-DE-SEGURANCA.md` | o que nunca se toca e por quê |
-| `docs/PROVENIENCIA.md` | de onde veio e o que saiu |
-| `docs/PENDENCIAS.md` | o trabalho da versão universal, em ordem |
+| **Web** — [radioterapia.ai](https://radioterapia.ai) | an **AI-first hub for medical skills**, and a hub for applications and community contributions. Expert Mode for professionals, Patient Information mode in 12 languages |
+| **Local** | tools that run on the clinic's own machine, where the data never leaves: this kit, auto-contouring, local pseudonymization |
+| **Mobile** | Android in the room — [PhotoID RT](https://github.com/radioterapia-ai/photoid-rt) |
+| **Hugging Face** | what needs heavy dependencies a common user should not have to install, for quick use in the browser — POP de Elite runs there |
+
+The web layer is where the community comes in: list your app, share your
+repository, or deploy with us. See **[radioterapia.ai/about](https://radioterapia.ai/about)**.
+
+## Who builds this
+
+**Radioterapia.AI** — *Inteligência além das fronteiras da saúde.*
+
+**Dr. Henrique Faria Braga** — Medical Skills & Apps. Radiation oncologist with
+more than ten years building automation for operational and managerial workflows
+in radiation therapy, and the originator of Radioterapia.AI. Medicine at FMUSP,
+residencies in Internal Medicine and Radiation Oncology at USP. Head of the
+Radiation Therapy team at Rede Américas and Medical Coordinator of Oncology at
+Centro Médico Samaritano Barra da Tijuca, Rio de Janeiro.
+CREMESP 129263 · CREMERJ 52-111804-8 · RQE-SP 54873 · RQE-RJ 331440 · CNEN CB-8319
+
+**Fís. Lucas Brito** — Physics Scripts & Architecture, **co-founder**. Medical
+physicist with a doctorate in Medical Physics, responsible for the platform's
+technical architecture and AI tooling. He registered the domain and runs the
+infrastructure that put the web ecosystem online.
+
+### Links
+
+| | |
+|---|---|
+| Website | [radioterapia.ai](https://radioterapia.ai) · [about](https://radioterapia.ai/about) |
+| Instagram | [@radioterapia.ai](https://www.instagram.com/radioterapia.ai/) · [@radioterapiabr](https://www.instagram.com/radioterapiabr/) · [@podirradiar](https://www.instagram.com/podirradiar/) |
+| LinkedIn | [Henrique Braga](https://www.linkedin.com/in/henriquefbraga/) · [Lucas Brito](https://www.linkedin.com/in/lucassbrito/) |
+| Personal site | [drhenriquebraga.com.br](https://drhenriquebraga.com.br/) |
 
 ---
 
-Toda saída deste aplicativo é um rascunho sujeito a revisão.
+## Licence and name
+
+The source code is released under the **[Apache License 2.0](LICENSE)**.
+
+Two things travel with it and are not optional:
+
+- **[NOTICE](NOTICE)** — section 4(d) of the licence requires it to accompany every
+  redistribution. It carries the declaration that this is not validated for
+  clinical use.
+- **The name is not licensed.** Section 6 grants no trademark rights:
+  "Radioterapia.AI" and "Workstation Kit", and their logos, may not be used to
+  identify derived products.
+
+Copyright © 2026 Henrique Faria Braga. Radioterapia.AI is a trade name and a
+website, not a legal entity.
+
+Learn more at **[radioterapia.ai](https://radioterapia.ai)**.

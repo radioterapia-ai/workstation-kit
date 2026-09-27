@@ -1,0 +1,74 @@
+Workstation Kit
+Copyright 2026 Henrique Faria Braga
+
+Este produto inclui software desenvolvido como parte do ecossistema
+Radioterapia.AI (https://radioterapia.ai).
+
+================================================================================
+ NAO VALIDADO PARA USO CLINICO
+================================================================================
+
+O Workstation Kit e um UTILITARIO DE WINDOWS. Nao e dispositivo medico. Nao
+diagnostica paciente, nao mede, nao interpreta imagem medica e nao substitui
+julgamento profissional.
+
+Ele prepara a maquina para o trabalho do dia comecar: diagnostica, limpa e
+otimiza a sessao aberta do Windows.
+
+================================================================================
+ O QUE ESTE PROJETO E, E O QUE ELE NAO E
+================================================================================
+
+E um aplicativo de Windows, nao um aplicativo de radioterapia.
+
+A unica parte dele que toca o mundo medico sao as LISTAS DE PROTECAO: nomes de
+processo que ele nunca encerra. Elas existem porque esta ferramenta nasceu dentro
+de um servico de radioterapia, onde encerrar o processo errado nao e incomodo, e
+interromper atendimento.
+
+Essas listas cobrem sistemas de planejamento, sistemas de record-and-verify,
+visualizadores de imagem, prontuarios eletronicos, clientes de aplicacao
+publicada, ferramentas de acesso remoto do TI, agentes de backup e agentes de
+seguranca corporativa, de varios fabricantes. Nao somos autores de nenhum desses
+programas, e os nomes aparecem aqui apenas para que eles sejam PRESERVADOS.
+
+A cobertura nao e completa, e o projeto diz onde nao e: ver docs/PENDENCIAS.md.
+
+================================================================================
+ REVERSIBILIDADE
+================================================================================
+
+Nada que este aplicativo faz sobrevive a um reinicio, exceto os arquivos que o
+usuario escolheu apagar.
+
+Processo encerrado, tarefa parada, prioridade de CPU e memoria compactada voltam
+no proximo logon. Item tirado da inicializacao e ajuste de desempenho voltam pelo
+botao Desfazer, que guarda o valor anterior antes de gravar. Downloads antigos vao
+para a Lixeira.
+
+O aplicativo nao desinstala nada. Deteccao que exigiria acao definitiva sai como
+achado, com o comando, para a pessoa decidir.
+
+================================================================================
+ COMPONENTES DE TERCEIROS
+================================================================================
+
+Nenhum.
+
+O aplicativo e um unico arquivo PowerShell 5.1 e usa somente o que acompanha o
+Windows: System.Windows.Forms, System.Drawing, CIM/WMI e os cmdlets do proprio
+PowerShell. Nao ha biblioteca empacotada, nao ha download em tempo de execucao e
+nao ha atualizacao automatica.
+
+Essa ausencia e deliberada. Um script que baixa componente e comportamento que
+antivirus corporativo trata como suspeito, com razao.
+
+================================================================================
+ MARCA
+================================================================================
+
+A licenca Apache 2.0 cobre o codigo. A secao 6 nao concede direito de marca:
+"Radioterapia.AI" e "Workstation Kit", e seus logotipos, nao podem ser usados
+para identificar produtos derivados.
+
+Radioterapia.AI e nome comercial e um site, nao e pessoa juridica.

@@ -111,7 +111,10 @@ $CATEGORIAS = @(
     }
     [pscustomobject]@{
         Nome    = 'dominio com TLD'
-        Padrao  = '\b[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9][A-Za-z0-9-]*)+\.(?:com|net|org|gov|edu|br|mil|int|info|io|ai|co)\b'
+        # Duas partes bastam: "hospital.com" e dominio corporativo tanto quanto   EXEMPLO-FICTICIO
+        # "mail.hospital.com". A versao anterior exigia subdominio e deixava  EXEMPLO-FICTICIO
+        # passar o caso mais curto, que e justamente o mais comum.
+        Padrao  = '\b[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9][A-Za-z0-9-]*)*\.(?:com|net|org|gov|edu|br|mil|int|info|io|ai|co)\b'
         Porque  = 'nome de dominio, possivelmente corporativo'
     }
     [pscustomobject]@{
