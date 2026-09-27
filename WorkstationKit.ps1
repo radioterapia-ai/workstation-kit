@@ -1638,7 +1638,7 @@ function Get-VeredictoArquivo {
     # ---- MANTER: arquivo de sistema, dado clinico, banco, programa ----
     if ($Arquivo.Name -match '^(hiberfil|pagefile|swapfile)\.sys$')      { return @{ V = 'MANTER';  M = 'Arquivo de sistema do Windows. Apagar quebra a maquina.' } }
     if ($e -match '^\.(mdf|ldf|ndf|bak|trn|dbf)$')                       { return @{ V = 'MANTER';  M = 'Arquivo de banco de dados. Apagar derruba o sistema.' } }
-    if ($p -like ('*' + $script:PastaClinica + '*'))                     { return @{ V = 'MANTER';  M = 'Esta na pasta clinica.' } }
+    if (Test-DentroDaPasta -Caminho $p -Pasta $script:PastaClinica)      { return @{ V = 'MANTER';  M = 'Esta na pasta clinica.' } }
     if ($p -match $script:RaizesClinicas) { return @{ V = 'MANTER'; M = 'Dado de sistema clinico.' } }
     if ($p -match '\\CentBrowser')      { return @{ V = 'MANTER'; M = 'CentBrowser e o navegador do prontuario da clinica.' } }
     if ($p -match 'Digitalcore|\\Onis') { return @{ V = 'MANTER'; M = 'Dados do visualizador DICOM Onis.' } }
@@ -3873,7 +3873,7 @@ function Set-AjusteStorageSense {
 # =====================================================================
 function Get-VeredictoPasta {
     param([string]$Caminho)
-    if ($Caminho -like ($script:PastaClinica + '*'))                             { return @{ V = 'NAO APAGAR'; M = 'Pasta clinica. Nunca apague.' } }
+    if (Test-DentroDaPasta -Caminho $Caminho -Pasta $script:PastaClinica)        { return @{ V = 'NAO APAGAR'; M = 'Pasta clinica. Nunca apague.' } }
     if ($Caminho -match $script:RaizesClinicas) { return @{ V = 'NAO APAGAR'; M = 'Dado de sistema clinico.' } }
     if ($Caminho -match 'SQL Server|Tomcat') { return @{ V = 'NAO APAGAR'; M = 'Aplicativo clinico em uso.' } }
     if ($Caminho -match 'CentBrowser')      { return @{ V = 'NAO APAGAR'; M = 'CentBrowser e o navegador do prontuario da clinica.' } }
@@ -4073,6 +4073,16 @@ $script:SessaoPreservar = 'wfica32|wfcrun32|CDViewer|SelfService|Receiver|concen
     '|WindowsTerminal|OpenConsole|FortiTray|FortiClient|FortiSSLVPN|Forti' +
     '|EXCEL|WINWORD|POWERPNT|OUTLOOK|MSACCESS|^olk$|onenote|StickyNot' +
     '|javaw|^java$|jp2launcher|Wheb|tasy' +
+    # Prontuario eletronico com presenca mundial. Tasy e o da Philips usado no
+    # Brasil e estava sozinho aqui; num parque fora dele o prontuario tem outro
+    # nome, e prontuario encerrado no meio de um atendimento e o mesmo estrago
+    # com qualquer marca.
+    #
+    # 'Epic' era o caso grave: o token 'Epic' da lista de CONHECIDOS existe para
+    # o lancador de jogo, e casava Epic Systems. Medido, com janela aberta e
+    # 800 MB: vinha PRE-MARCADO, com a nota 'programa conhecido e nao guarda
+    # documento' - falsa nas duas afirmacoes para um prontuario.
+    '|^Epic$|EpicSystems|Hyperspace|PowerChart|Cerner|MEDITECH|Soarian|Sectra' +
     '|Vitrea|Vsp|^VI\.|Mirada|Medis|4DM|Corridor|NeuroQ|Olea|TomTec|ARIA|Eclipse|Varian|MOSAIQ|Monaco|MIM|RayStation|Velocity|Onis|Digitalcore|dicom|PACS' +
     '|sqlservr|Tomcat|catalina|w3wp|inetinfo|MSMQ|postgres|mysqld|oracle|firebird' +
     '|^claude$|^claude-code$' +
@@ -4287,6 +4297,33 @@ function Get-SufixosDns {
     if ($script:SufixosDnsExtra) { $l += $script:SufixosDnsExtra }
     return @($l | Where-Object { $_ } | ForEach-Object { "$_".Trim().TrimStart('.').ToLower() } |
              Where-Object { $_ } | Select-Object -Unique)
+}
+
+function Test-DentroDaPasta {
+    # $Caminho esta DENTRO de $Pasta (ou e ela mesma)?
+    #
+    # Duas regras, e as duas ja custaram defeito neste projeto:
+    #
+    # 1. PASTA VAZIA RESPONDE FALSO. Nao ha pasta configurada, entao nao ha o que
+    #    dizer. A versao anterior montava o curinga com a variavel dentro - com
+    #    ela vazia, '-like (''*'' + '''' + ''*'')' vira '-like ''**''' e casa com
+    #    TODO caminho. Medido: todo arquivo grande saia com veredicto MANTER e
+    #    toda pasta com NAO APAGAR, com o motivo 'Esta na pasta clinica' - que e
+    #    falso - e sem uma linha de erro.
+    #
+    # 2. COMPARA POR COMPONENTE, nao por prefixo de texto. 'C:\PASTA' como
+    #    prefixo tambem casa 'C:\PASTA_ANTIGA'. Mesma familia do nome de regex
+    #    sem ancora que casa demais, e mesma solucao de Test-CaminhoEcossistema.
+    param([string]$Caminho, [string]$Pasta)
+    if (-not "$Pasta".Trim() -or -not "$Caminho".Trim()) { return $false }
+    $sep = [char]92
+    $a = "$Caminho".TrimEnd($sep, [char]47)
+    $b = "$Pasta".TrimEnd($sep, [char]47)
+    if ($a.Length -lt $b.Length) { return $false }
+    if (-not $a.StartsWith($b, [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+    if ($a.Length -eq $b.Length) { return $true }
+    $prox = $a[$b.Length]
+    return ($prox -eq $sep -or $prox -eq [char]47)
 }
 
 function Test-CaminhoEcossistema {
@@ -4519,7 +4556,7 @@ function Get-GruposSessao {
     if ($script:SnapGrupos) { return $script:SnapGrupos }
     # Agrupa os dispensaveis por nome, separando quem tem janela aberta.
     $procs = @(Get-ProcessosSessao | Where-Object { $_.Classe -eq 'Dispensavel' })
-    $conhecidos = 'OneDrive|OneDriveStandaloneUpdater|Teams|ms-teams|msteams|Update|Updater|GoogleUpdate|EdgeUpdate|MicrosoftEdgeUpdate|AdobeARM|AdobeGCClient|armsvc|jusched|jucheck|jp2launcher|Squirrel|SCNotification|Notification|Toast|UserOOBEBroker|CompPkgSrv|WindowsInternal|CCXProcess|Creative|CCLibrary|AdobeIPC|AdobeNotification|GameBar|Xbox|Gaming|NVIDIA Share|NVIDIA Web|YourPhone|PhoneExperience|Widget|SearchApp|Cortana|Copilot|SupportAssist|DellSupport|HPSupport|HPPrint|Vantage|ImController|McUICnt|Spotify|Dropbox|Box|GoogleDriveFS|Zoom|Slack|Discord|Skype|Steam|Epic|iTunesHelper|AppleMobileDevice|iPodService|StartMenuExperienceHost|ShellExperienceHost|TextInputHost|WindowsInternal'
+    $conhecidos = 'OneDrive|OneDriveStandaloneUpdater|Teams|ms-teams|msteams|Update|Updater|GoogleUpdate|EdgeUpdate|MicrosoftEdgeUpdate|AdobeARM|AdobeGCClient|armsvc|jusched|jucheck|jp2launcher|Squirrel|SCNotification|Notification|Toast|UserOOBEBroker|CompPkgSrv|WindowsInternal|CCXProcess|Creative|CCLibrary|AdobeIPC|AdobeNotification|GameBar|Xbox|Gaming|NVIDIA Share|NVIDIA Web|YourPhone|PhoneExperience|Widget|SearchApp|Cortana|Copilot|SupportAssist|DellSupport|HPSupport|HPPrint|Vantage|ImController|McUICnt|Spotify|Dropbox|Box|GoogleDriveFS|Zoom|Slack|Discord|Skype|Steam|EpicGamesLauncher|EpicWebHelper|iTunesHelper|AppleMobileDevice|iPodService|StartMenuExperienceHost|ShellExperienceHost|TextInputHost|WindowsInternal'
     $conhecidos = $conhecidos + '|' + $script:SessaoAudio + '|' + $script:SessaoEnfeites
     $grupos = $procs | Group-Object Nome | ForEach-Object {
         $g = $_.Group

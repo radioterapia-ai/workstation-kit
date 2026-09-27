@@ -70,7 +70,7 @@ Write-Host '  BOM presente'
 # 2. Carrega as listas e as funcoes REAIS do aplicativo
 #    (nao copias: o teste tem de morrer junto com o codigo que testa)
 # ---------------------------------------------------------------------
-$listas = 'MarcaEcossistema','Protegidos','SessaoAudio','SessaoEnfeites','SessaoRemoto',
+$listas = 'MarcaEcossistema','PastaClinica','Protegidos','SessaoAudio','SessaoEnfeites','SessaoRemoto',
           'SessaoPreservar','SessaoNaoCompactar','RaizesClinicas','Lim','ArquivoEmUso',
           'EmUsoMaxMin','SnapProc','SnapSvc','EmUsoOperacao','SnapProcEm','EmUsoOperacaoEm',
           'SnapMaxSeg','SnapSessao','SnapGrupos'
@@ -146,7 +146,8 @@ if ($ruim -gt 0) {
 Write-Host ('  {0} listas de protecao conferidas: nenhuma casa com qualquer coisa' -f $listasRegex.Count)
 $funcoes = 'Get-SnapshotProc','Get-SnapshotSvc','Clear-SnapshotProc','Clear-SnapshotsOperacao',
            'Get-CaminhosProcesso','Get-CaminhoAoVivo','Get-EmUsoOperacao','Get-AppEmUso',
-           'Test-CaminhoEcossistema','Test-PodeEncerrarSessao','Get-ProcessosSessao'
+           'Test-CaminhoEcossistema','Test-PodeEncerrarSessao','Get-ProcessosSessao',
+           'Test-DentroDaPasta','Get-VeredictoArquivo','Get-VeredictoPasta'
 foreach ($n in $funcoes) {
     $f = $ast.FindAll({ param($x)
         $x -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $n }, $true)
@@ -363,6 +364,39 @@ try {
         }
     }
     Write-Host ('    {0} entrada(s) por cobrir. Nao conta como falha: conta como trabalho.' -f $faltando) -ForegroundColor Yellow
+
+    Write-Host ''
+    Write-Host '=== 12. configuracao vazia nao casa com tudo ===' -ForegroundColor Cyan
+    Write-Host '    (defeito: -like (''*'' + $vazio + ''*'') vira -like ''**'' e casa com TODO'
+    Write-Host '     caminho. Medido: todo arquivo grande saia MANTER e toda pasta saia'
+    Write-Host '     NAO APAGAR, com o motivo "Esta na pasta clinica" - que e falso)'
+
+    $guardado = $script:PastaClinica
+    try {
+        foreach ($vazio in @('', '   ', $null)) {
+            $script:PastaClinica = $vazio
+            $rot = if ($null -eq $vazio) { '$null' } elseif (-not $vazio) { 'vazia' } else { 'so espacos' }
+
+            Vale ('Test-DentroDaPasta com pasta ' + $rot) $false (Test-DentroDaPasta -Caminho 'C:\Qualquer\Coisa.txt' -Pasta $vazio)
+
+            $v = Get-VeredictoArquivo -Caminho 'C:\Users\x\Downloads\enorme.msi' -Ext '.msi' -Bytes 500MB -Idade 200
+            Vale ('arquivo comum nao vira MANTER com pasta ' + $rot) $true ($v.V -ne 'MANTER')
+
+            $vp = Get-VeredictoPasta -Caminho 'C:\Users\x\Music'
+            Vale ('pasta comum nao vira NAO APAGAR com pasta ' + $rot) $true ($vp.V -ne 'NAO APAGAR')
+        }
+
+        # E com a pasta PREENCHIDA continua funcionando, inclusive recusando o
+        # vizinho de nome parecido - prefixo de texto casaria, componente nao.
+        $script:PastaClinica = 'C:\PASTA CLINICA'
+        Vale 'dentro da pasta e reconhecido'        $true  (Test-DentroDaPasta -Caminho 'C:\PASTA CLINICA\sub\a.xlsb' -Pasta $script:PastaClinica)
+        Vale 'a propria pasta e reconhecida'        $true  (Test-DentroDaPasta -Caminho 'C:\PASTA CLINICA' -Pasta $script:PastaClinica)
+        Vale 'com barra final tambem'               $true  (Test-DentroDaPasta -Caminho 'C:\PASTA CLINICA\' -Pasta $script:PastaClinica)
+        Vale 'vizinho de nome parecido NAO entra'   $false (Test-DentroDaPasta -Caminho 'C:\PASTA CLINICA_ANTIGA\a.txt' -Pasta $script:PastaClinica)
+        Vale 'outra pasta nao entra'                $false (Test-DentroDaPasta -Caminho 'C:\Outra\a.txt' -Pasta $script:PastaClinica)
+        Vale 'caixa diferente entra'                $true  (Test-DentroDaPasta -Caminho 'c:\pasta clinica\a.txt' -Pasta $script:PastaClinica)
+    }
+    finally { $script:PastaClinica = $guardado }
 
     Write-Host ''
     Write-Host '=== 8. o retrato da sessao serve para MOSTRAR, e nao mente ===' -ForegroundColor Cyan
