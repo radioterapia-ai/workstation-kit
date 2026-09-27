@@ -3070,21 +3070,24 @@ function Get-PlanoLimpeza {
         })
     }
 
-    # ---- 7. mapeamentos mortos ----
+    # ---- 7. mapeamento morto e credencial orfa: ACHADO, nao acao ----
+    #
+    # Os dois eram acao do kit e sairam. Motivo: 'net use /delete /y' e
+    # 'cmdkey /delete' nao voltam no logon e nao sao restaurados por
+    # Restore-Otimizacoes. Eram os dois unicos itens do plano nessa situacao.
+    #
+    # A deteccao fica - mapeamento morto e credencial orfa sao diagnostico util.
+    # O que muda e quem executa: o kit mostra o comando, a pessoa decide.
+    #
+    # Mesmo padrao que o projeto ja aplica ao que exige administrador: nao entra
+    # como acao, entra como achado.
     foreach ($m in (Get-MapeamentosMortos)) {
-        [void]$plano.Add([pscustomobject]@{
-            Grupo = 'REDE'; Rotulo = ('Remover mapeamento morto {0} ({1})' -f $m.Letra, $m.Destino); Valor = ''; Bytes = 0
-            Marcar = $true; Dados = $m; Nota = 'Rode o Modulo 1 (Preparar ambiente) depois para remapear.'
-        })
+        Add-Achado 'ALERTA' ('Mapeamento de rede sem resposta: {0} aponta para {1}' -f $m.Letra, $m.Destino) `
+            ('Para remover, rode no Prompt de Comando:  net use {0} /delete' -f $m.Letra) 'Rede' 'Baixo'
     }
-
-    # ---- 8. credenciais orfas deixadas pela migracao de dominio ----
     foreach ($c in (Get-CredenciaisOrfas)) {
-        [void]$plano.Add([pscustomobject]@{
-            Grupo = 'CREDENC'; Rotulo = ('Remover credencial salva de {0}' -f $c.Servidor); Valor = ''; Bytes = 0
-            Marcar = $false; Dados = $c
-            Nota = 'DESMARCADO de proposito: e a unica acao do kit sem desfazer. Se o DNS estiver instavel, pode remover credencial valida.'
-        })
+        Add-Achado 'ALERTA' ('Credencial salva de servidor que nao responde: {0}' -f $c.Servidor) `
+            ('Para remover, rode:  cmdkey /delete:{0}   -- confira o nome antes: se for erro de DNS, o servidor existe e a credencial e valida.' -f $c.Alvo) 'Credenciais' 'Baixo'
     }
 
     return $plano
@@ -3186,7 +3189,12 @@ function Invoke-Modulo3Limpeza {
         $msg += " · Encerrar {0} programa(s) dispensavel(is)`r`n" -f $nFechar
         $msg += " · Tirar {0} item(ns) da inicializacao`r`n" -f $nIni
         $msg += " · Aplicar {0} ajuste(s) de desempenho`r`n`r`n" -f $nAju
-        $msg += "Downloads e Lixeira: o que sair vai para a Lixeira antes dela ser esvaziada, entao ainda da para recuperar.`r`n`r`nContinuar?"
+        # A ordem real e LIXEIRA e depois BAIXADOS: a Lixeira e esvaziada PRIMEIRO,
+        # e o que sai de Downloads vai para ela depois. O texto anterior dizia o
+        # contrario - "vai para a Lixeira antes dela ser esvaziada" - e ainda
+        # afirmava que dava para recuperar, o que nao segue.
+        $msg += "A Lixeira e esvaziada primeiro. O que sair de Downloads vai para ela depois, e continua recuperavel.`r`n"
+        $msg += "Fora os arquivos apagados, nada aqui e definitivo: o botao Desfazer e o proximo logon devolvem o resto.`r`n`r`nContinuar?"
     }
 
     if ([System.Windows.Forms.MessageBox]::Show($msg, 'Aplicar limpeza', 'YesNo', 'Question') -ne 'Yes') {
@@ -3216,7 +3224,16 @@ $script:LogonSegundos      = 0
 
     try {
         # ordem: fechar (libera arquivos travados) -> limpar -> lixeira -> downloads -> inicializacao -> ajustes -> rede
-        $ordem = @('SESSAO', 'TAREFA', 'FECHAR', 'LIMPAR', 'LIXEIRA', 'BAIXADOS', 'INICIAR', 'AJUSTE', 'REDE', 'CREDENC', 'PRIORIDADE', 'MEMORIA')
+        # Ordem de execucao. TODO grupo daqui reverte: no logon (SESSAO, TAREFA,
+        # FECHAR, PRIORIDADE, MEMORIA), pelo botao Desfazer (INICIAR, AJUSTE), ou
+        # pela Lixeira (BAIXADOS). LIMPAR e LIXEIRA apagam - sao a limpeza, e
+        # LIXEIRA e o unico ponto sem volta do kit.
+        #
+        # REDE e CREDENC estavam aqui e sairam: 'net use /delete' e 'cmdkey
+        # /delete' nao voltam de forma nenhuma. Viraram achado.
+        #
+        # Grupo novo aqui precisa de caminho de volta. A suite confere.
+        $ordem = @('SESSAO', 'TAREFA', 'FECHAR', 'LIMPAR', 'LIXEIRA', 'BAIXADOS', 'INICIAR', 'AJUSTE', 'PRIORIDADE', 'MEMORIA')
         foreach ($g in $ordem) {
             $doGrupo = @($marcados | Where-Object { $_.Grupo -eq $g })
             if ($doGrupo.Count -eq 0) { continue }
@@ -3228,8 +3245,6 @@ $script:LogonSegundos      = 0
                 'BAIXADOS' { Write-Log '' ; Write-Log 'Enviando Downloads antigos para a Lixeira...' 'TITULO' }
                 'INICIAR'  { Write-Log '' ; Write-Log 'Tirando programas da inicializacao...' 'TITULO' }
                 'AJUSTE'   { Write-Log '' ; Write-Log 'Aplicando ajustes de desempenho...' 'TITULO' }
-                'REDE'     { Write-Log '' ; Write-Log 'Removendo mapeamentos mortos...' 'TITULO' }
-                'CREDENC'  { Write-Log '' ; Write-Log 'Removendo credenciais de servidores inexistentes...' 'TITULO' }
                 'SESSAO'     { Write-Log '' ; Write-Log 'Encerrando programas dispensaveis da sessao...' 'TITULO' }
                 'TAREFA'     { Write-Log '' ; Write-Log 'Parando tarefas agendadas em execucao...' 'TITULO' }
                 'PRIORIDADE' { Write-Log '' ; Write-Log 'Ajustando prioridade de CPU...' 'TITULO' }
@@ -3339,79 +3354,10 @@ $script:LogonSegundos      = 0
                         Write-Log ('Aplicado: {0}' -f $item.Rotulo) 'OK'
                     }
 
-                    'REDE' {
-                        # Programa externo nao lanca excecao: o catch nunca dispararia e a
-                        # mensagem de sucesso sairia mesmo com o net use falhando. Confere o
-                        # codigo de saida e depois se a letra sumiu da lista do Windows.
-                        # A conferencia e por CIM, consulta local: nao toca no servidor morto.
-                        $saidaNet = (& net use $item.Dados.Letra /delete /y 2>&1 | Out-String).Trim()
-                        $codigoNet = $LASTEXITCODE
-                        $aindaMapeada = $false
-                        try {
-                            $aindaMapeada = @(Get-CimInstance Win32_NetworkConnection -ErrorAction Stop |
-                                Where-Object { "$($_.LocalName)" -eq "$($item.Dados.Letra)" }).Count -gt 0
-                        } catch { }
-                        if ($codigoNet -eq 0 -and -not $aindaMapeada) {
-                            Write-Log ('Mapeamento {0} removido.' -f $item.Dados.Letra) 'OK'
-                        } else {
-                            Write-Log ('{0}: o Windows nao removeu o mapeamento (codigo {1}). A letra continua na lista.' -f $item.Dados.Letra, $codigoNet) 'ALERTA'
-                            if ($saidaNet) { Write-Log ('   ' + (@($saidaNet -split "`r?`n")[0])) 'DADO' }
-                        }
-                    }
-
-                    'SESSAO' {
-                        Set-Status ('Encerrando {0}...' -f $item.Dados.Nome)
-                        $liberou = 0.0
-                        $ok = 0
-                        foreach ($id in $item.Dados.Ids) {
-                            try {
-                                $pr = Get-Process -Id $id -ErrorAction Stop
-                                # Caminho AO VIVO, de proposito: se este PID foi reciclado
-                                # desde o instantaneo, o ocupante de agora e que decide.
-                                # E a sinalizacao do Local Suite pela uniao das duas
-                                # leituras: o arquivo relido agora, 9 ms, mais a
-                                # descendencia, renovada a cada 15 s de lote.
-                                if (-not (Test-PodeEncerrarSessao -Nome $pr.ProcessName -Caminho ([string]$pr.Path) -ProcId ([int]$pr.Id) -EmUso (Get-EmUsoOperacao))) { continue }
-                                $liberou += $pr.WorkingSet64
-                                if ($pr.MainWindowHandle -ne 0) { [void]$pr.CloseMainWindow(); Start-Sleep -Milliseconds 400 }
-                                if (-not $pr.HasExited) { Stop-Process -Id $id -Force -ErrorAction Stop }
-                                $ok++
-                            } catch { }
-                        }
-                        $memoria += $liberou
-                        if ($ok -gt 0) {
-                            $script:SessaoEncerrados += $item.Dados.Nome
-                            Write-Log ('{0}: {1} processo(s) encerrado(s), {2} devolvidos' -f $item.Dados.Nome, $ok, (Format-Bytes $liberou)) 'OK'
-                        }
-                        else { Write-Log ('{0}: nao foi possivel encerrar (protegido ou ja fechado)' -f $item.Dados.Nome) 'DADO' }
-                    }
-
-                    'TAREFA' {
-                        try {
-                            Stop-ScheduledTask -TaskName $item.Dados.Nome -TaskPath $item.Dados.Caminho -ErrorAction Stop
-                            Write-Log ('Tarefa parada: {0}{1}' -f $item.Dados.Caminho, $item.Dados.Nome) 'OK'
-                        } catch {
-                            Write-Log ('{0}: sem permissao para parar (roda como SISTEMA - so o TI)' -f $item.Dados.Nome) 'DADO'
-                        }
-                    }
-
                     'PRIORIDADE' { Invoke-AcaoPrioridade }
 
                     'MEMORIA'    { Invoke-AcaoMemoria }
 
-                    'CREDENC' {
-                        # E a unica acao sem desfazer do kit, entao e a que mais precisa
-                        # dizer a verdade. cmdkey e programa externo: nao lanca excecao,
-                        # e o codigo de saida e o unico sinal confiavel de que removeu.
-                        $saidaCred = (& cmdkey /delete:$($item.Dados.Alvo) 2>&1 | Out-String).Trim()
-                        $codigoCred = $LASTEXITCODE
-                        if ($codigoCred -eq 0) {
-                            Write-Log ('Credencial removida (sem desfazer): {0}' -f $item.Dados.Alvo) 'OK'
-                        } else {
-                            Write-Log ('{0}: a credencial NAO foi removida (codigo {1}). Nada foi perdido.' -f $item.Dados.Alvo, $codigoCred) 'ALERTA'
-                            if ($saidaCred) { Write-Log ('   ' + (@($saidaCred -split "`r?`n")[0])) 'DADO' }
-                        }
-                    }
                 }
                 Pump
             }
@@ -4939,7 +4885,7 @@ function Get-PlanoSessao {
 function Invoke-Modulo7Sessao {
     Clear-SnapshotsOperacao
     Write-Titulo 'Modulo 5 - Otimizar a sessao atual'
-    Write-Log 'Nada e desinstalado nem desativado: o proximo logon devolve tudo ao normal.' 'DADO'
+    Write-Log 'Nada e desinstalado. O que este modulo faz volta no proximo logon.' 'DADO'
     Write-Log 'Citrix, navegador do prontuario, navegador web, Office e acesso remoto ficam sempre de fora.' 'DADO'
     Write-Log 'Audio e microfone sao encerrados: o som continua funcionando, sai so a camada de realce.' 'DADO'
 

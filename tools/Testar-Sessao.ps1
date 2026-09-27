@@ -454,6 +454,52 @@ try {
     Vale 'navegador nao entra na porta de momento' $false ((Test-Padrao 'msedge' $script:AppsDeTrabalho) -or (Test-Padrao 'chrome' $script:AppsDeTrabalho))
     Vale 'Office nao entra na porta de momento'    $false ((Test-Padrao 'EXCEL' $script:AppsDeTrabalho) -or (Test-Padrao 'OUTLOOK' $script:AppsDeTrabalho))
 
+
+    Write-Host ''
+    Write-Host '=== 16. todo grupo de acao tem caminho de volta ===' -ForegroundColor Cyan
+    Write-Host '    (principio: nada que o app faz sobrevive a um reinicio, exceto os'
+    Write-Host '     arquivos que o usuario escolheu apagar)'
+
+    # A classificacao e DECLARADA aqui, nao lida do codigo. Se fosse lida, o
+    # teste concordaria com qualquer coisa que o codigo dissesse - e o que se
+    # quer e o contrario: que o codigo tenha de concordar com isto.
+    $volta = @{
+        'SESSAO'     = 'logon'
+        'FECHAR'     = 'logon'
+        'TAREFA'     = 'logon'
+        'PRIORIDADE' = 'logon'
+        'MEMORIA'    = 'imediato'
+        'INICIAR'    = 'Desfazer'
+        'AJUSTE'     = 'Desfazer'
+        'BAIXADOS'   = 'Lixeira'
+        'LIMPAR'     = 'limpeza declarada'
+        'LIXEIRA'    = 'limpeza declarada'
+    }
+    # Estes dois FORAM acao e sairam. Se voltarem, reprova.
+    $proibidos = @('REDE', 'CREDENC')
+
+    $linhaOrdem = @(Get-Content -LiteralPath $alvo -Encoding UTF8 |
+                    Where-Object { $_ -match "^\s*\`$ordem = @\('" })
+    Vale 'achei a lista de ordem de execucao' 1 $linhaOrdem.Count
+    if ($linhaOrdem.Count -eq 1) {
+        $grupos = @([regex]::Matches($linhaOrdem[0], "'([A-Z]+)'") | ForEach-Object { $_.Groups[1].Value })
+        Write-Host ('     grupos em execucao: ' + ($grupos -join ', ')) -ForegroundColor DarkGray
+        Vale 'ha grupos na ordem' $true ($grupos.Count -gt 0)
+        foreach ($g in $grupos) {
+            Vale ($g + ' tem caminho de volta declarado') $true ($volta.ContainsKey($g))
+            Vale ($g + ' nao esta na lista de proibidos') $false ($proibidos -contains $g)
+        }
+    }
+
+    # E o outro lado: o que saiu nao pode ter sobrado ramo de executor.
+    $corpo = (Get-Content -LiteralPath $alvo -Raw -Encoding UTF8)
+    foreach ($g in $proibidos) {
+        Vale ('sem ramo de executor para ' + $g) $false ($corpo -match ("(?m)^\s+'" + $g + "' \{"))
+    }
+    # A deteccao, porem, tem de continuar: virou achado, nao desapareceu.
+    Vale 'Get-MapeamentosMortos continua existindo'  $true ([bool]($corpo -match 'function Get-MapeamentosMortos'))
+    Vale 'Get-CredenciaisOrfas continua existindo'   $true ([bool]($corpo -match 'function Get-CredenciaisOrfas'))
+    Vale 'e os dois viraram Add-Achado'              $true (([regex]::Matches($corpo, 'Add-Achado .+Mapeamento de rede sem resposta')).Count -eq 1 -and ([regex]::Matches($corpo, 'Add-Achado .+Credencial salva de servidor')).Count -eq 1)
     # Mas eles CONTINUAM protegidos de encerramento - sao duas perguntas.
     Vale 'e navegador segue protegido de encerrar' $false (Test-PodeEncerrarSessao -Nome 'msedge' -Caminho '' -ProcId 0 -EmUso $null)
     Vale 'e Office segue protegido de encerrar'    $false (Test-PodeEncerrarSessao -Nome 'EXCEL'  -Caminho '' -ProcId 0 -EmUso $null)

@@ -42,25 +42,44 @@ distribuía a correção para 11 máquinas sem ninguém passar de mesa em mesa.
 
 | | |
 |---|---|
-| **1 · Preparar ambiente** | roda o script de preparação que você indicar |
-| **2 · Inventário e diagnóstico** | retrato da máquina, e o que dá para resolver |
-| **3 · Limpeza segura** | analisa, marca o que é seguro, aplica |
-| **4 · Arquivos e pastas grandes** | somente leitura; lista e dá veredicto |
-| **5 · Otimizar a sessão de agora** | reversível no próximo logon |
+| **Diagnóstico** | retrato da máquina, e o que dá para resolver |
+| **Arquivos grandes** | somente leitura; lista e dá veredicto |
+| **Limpeza** | temporários, caches e Downloads antigos |
+| **Otimizar sessão** | encerra o que não está em uso, ajusta prioridade, compacta memória |
+| **Persistência** | o que volta sozinho a cada logon |
 
-Antes de aplicar, os módulos 3 e 5 dizem se **é a hora certa**: quanto tempo a
-sessão está aberta, se há carga em andamento, e se o trabalho do dia já começou.
-| **6 · Diagnóstico de persistência** | o que volta sozinho a cada logon |
+Nomes em vez de números: o módulo de preparação de ambiente saiu, e renumerar o resto
+quebraria toda referência.
 
-O Módulo 5 é o mais usado, e o mais rápido: no projeto de origem o «Aplicar» caiu de
-26,6 s para 2,6 s, medido em máquina com 353 processos.
+Antes de aplicar, a Limpeza e o Otimizar sessão dizem se **é a hora certa**: quanto
+tempo a sessão está aberta, se há carga em andamento, e se o trabalho do dia já
+começou.
+
+## Nada é definitivo, exceto os arquivos que você apagar
+
+| o que | volta por |
+|---|---|
+| processos encerrados, tarefas paradas, prioridade de CPU, memória compactada | o próximo logon |
+| itens tirados da inicialização, ajustes de desempenho | o botão **Desfazer** |
+| Downloads antigos | a Lixeira |
+| temporários e caches | não voltam — é a limpeza |
+
+A Lixeira é esvaziada **primeiro**, e o que sai de Downloads vai para ela depois; por
+isso continua recuperável.
+
+**Não desinstala nada.** Quando um programa parece dispensável, o app **encerra o
+processo** em vez de desinstalar: libera a memória agora, e no próximo logon está tudo
+de volta. Detecção que exigiria ação definitiva — mapeamento de rede morto, credencial
+órfã — sai como achado, com o comando, para você decidir.
 
 ---
 
 ## O que ele não faz
 
 - não exige administrador, em nenhuma função
-- não desinstala nada, não mexe em serviço, não altera `HKLM`
+- não desinstala nada e não altera `HKLM`
+- não limpa registro: não há evidência publicada de ganho mensurável, e há risco real
+- não baixa nada e não se atualiza sozinho
 - não apaga arquivo fora de pasta de cache do próprio perfil — o Módulo 4 lista e dá
   veredicto, quem apaga é você, pelo Explorer
 - não encerra o que alguém está usando: Citrix, prontuário, banco de imagem,

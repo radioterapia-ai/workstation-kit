@@ -45,6 +45,29 @@ de tratamento aberta. Aqui vale mais largo e pelo mesmo motivo: a máquina pode
 estar tratando paciente, atendendo alguém no balcão, ou rodando o lote de
 processamento de um consultório.
 
+## Regra número três — reversibilidade
+
+> **Nada que este app faz sobrevive a um reinício, exceto os arquivos que o usuário
+> escolheu apagar.**
+
+Todo grupo de ação tem caminho de volta declarado: o logon (`SESSAO`, `FECHAR`,
+`TAREFA`, `PRIORIDADE`, `MEMORIA`), o botão Desfazer (`INICIAR`, `AJUSTE` — que
+guardam o valor anterior antes de gravar), ou a Lixeira (`BAIXADOS`). `LIMPAR` e
+`LIXEIRA` apagam, e são a limpeza declarada.
+
+`REDE` (`net use /delete`) e `CREDENC` (`cmdkey /delete`) **eram** ação e saíram: não
+voltam de forma nenhuma. A detecção ficou, como achado com o comando ao lado.
+
+**Em vez de desinstalar, encerra o processo.** Libera a memória agora e volta no
+próximo logon. É o que separa este app de um cleaner: nada precisa dar certo depois.
+
+O bloco 16 da suíte lê a lista `$ordem` do próprio `.ps1` e exige que cada grupo
+esteja na classificação **declarada no teste**. Grupo novo sem caminho de volta
+reprova. A classificação não é lida do código de propósito — se fosse, o teste
+concordaria com qualquer coisa que o código dissesse.
+
+---
+
 ## O momento é o mecanismo principal, não as listas
 
 **Este é um app de Windows, não um app de radioterapia.** Ele deixa a máquina leve
