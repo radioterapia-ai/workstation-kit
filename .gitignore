@@ -16,3 +16,6 @@ _montagem/
 # Windows
 Thumbs.db
 desktop.ini
+
+# Notas tecnicas extraidas do codigo. Leitura do agente, nao vai para o GitHub.
+docs/NOTAS-TECNICAS.md

@@ -1,34 +1,8 @@
 ﻿#requires -Version 5.1
-<#
-=====================================================================
- WORKSTATION KIT - CLINICAL AND OFFICE WORKSTATIONS        version 1.0
----------------------------------------------------------------------
- A versao UNIVERSAL do Kit de Suporte. Serve qualquer computador - de
- clinica, de consultorio, de recepcao ou pessoal -, em qualquer pais,
- preservando software de radioterapia de qualquer fabricante.
+# WorkstationKit - diagnostica, limpa e otimiza a sessao do Windows.
+# Arquivo unico, roda sem privilegio de administrador.
+# Notas tecnicas: docs/NOTAS-TECNICAS.md (nao versionado).
 
- Nasceu por fork do WORKSTATION_RT, feito para um hospital do Brasil.
- O que era daquele hospital saiu; ver docs/PROVENIENCIA.md.
-
- A interface esta em transicao para ingles, portugues e espanhol. O
- codigo e a documentacao seguem em portugues, que e a regra do
- ecossistema - ver CLAUDE.md.
----------------------------------------------------------------------
- Modulo 1 - Preparar ambiente         (rotina embutida neste arquivo)
- Modulo 2 - Inventario e diagnostico  (retrato + o que da para resolver)
- Modulo 3 - Limpeza segura            (analisa, marca o seguro, aplica)
- Modulo 4 - Arquivos e pastas grandes (somente leitura, so o C:)
- Modulo 5 - Otimizar sessao atual     (reversivel no proximo logon)
-
- O diagnostico do Citrix e do Tasy roda dentro do Modulo 2.
-
- Tudo roda com o usuario comum. Nenhuma acao exige administrador.
- Nada e apagado fora das pastas de cache do proprio perfil.
-=====================================================================
-#>
-
-# A janela roda com o console oculto. Erro nao-terminante escrito no fluxo de erro
-# nessa condicao derruba o aplicativo com "O pipeline foi interrompido".
 $ErrorActionPreference = 'SilentlyContinue'
 $ProgressPreference    = 'SilentlyContinue'
 $WarningPreference     = 'SilentlyContinue'
@@ -38,72 +12,21 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 } catch { }
 
-# =====================================================================
-# 1. CONFIGURACAO  (edite somente esta secao)
-# =====================================================================
 $script:Versao       = '1.0'
 $script:BaseDir      = if ($PSCommandPath) { Split-Path -Parent $PSCommandPath } else { (Get-Location).Path }
 $script:VersaoPreparador = ''
-# MODULO 1. A versao da clinica trazia um batch de 358 linhas embutido aqui, que
-# montava a arvore de trabalho daquele hospital: portais em Excel, atalhos, fonte
-# de codigo de barras, mapeamento de unidade e o passo 10 que copiava a pasta da
-# rede para o C:. Nada disso e universal, e sair levou embora tambem o dominio, o
-# fileserver e os dois IPs internos.
-#
-# O Modulo 1 continua existindo e ja degradava bem: sem rotina embutida, ele pede
-# um .bat de preparacao. Na versao universal e isso que ele e - "rode o seu script
-# de preparacao" -, e essa e uma funcao honesta para qualquer maquina.
+
 $script:ArquivoBatExterno = ''
 
-# PASTA DE TRABALHO CLINICA. Opcional, e vazia por padrao. Preenchida, o kit
-# confere se os arquivos dela estao em dia contra uma copia de referencia.
 $script:PastaClinica = ''
 $script:PastaClinicaRede = ''
 
-# Onde gravar a planilha do inventario. Local por padrao, e resolvido pela API do
-# Windows em vez de por nome: o caminho do perfil nao e adivinhavel e USERPROFILE
-# pode estar redirecionado. Pode receber um caminho de rede para juntar maquinas.
 $script:PastaRelatorios = try { [Environment]::GetFolderPath('MyDocuments') } catch { $env:TEMP }
 
-# Marca das cargas do ecossistema radioterapia.ai (AUTO_CONTORNO e afins).
-# E NOME DE PASTA, nunca caminho absoluto: a raiz muda de maquina - C: nesta,
-# D:\RADIOTERAPIA_AI\LOCAL_SUITE em outra estacao - e o _instalados.json
-# pode estar desatualizado. A marca viaja no caminho do proprio processo em
-# execucao, entao nao depende de raiz declarada nem de registro em dia.
-#
-# Por que por caminho e nao por nome: todo processo do AUTO_CONTORNO e python.exe.
-# O projeto chama o TotalSegmentator como 'sys.executable -m ...' de proposito,
-# para ser relocavel. Proteger o nome 'python' protegeria tambem o .venv de
-# desenvolvimento, que e descartavel; o caminho separa os dois.
-#
-# NA VERSAO UNIVERSAL isto e um PARAMETRO. O conceito e geral e vale para qualquer
-# maquina: "existe uma arvore de trabalho cuja carga nunca deve ser encerrada, e
-# ela se reconhece pelo CAMINHO do processo, nao pelo nome". Um consultorio que
-# roda o proprio lote de processamento tem a mesma necessidade.
-#
-# Vazio desliga a protecao por marca sem quebrar nada: Test-CaminhoEcossistema
-# passa a responder 'nao sei' para todo caminho, que e o padrao seguro dela.
 $script:MarcaEcossistema = 'RADIOTERAPIA_AI'
 
-# SUFIXOS DE DNS para tentar quando um nome CURTO de servidor nao resolve. Vazio
-# por padrao: o que o kit usa sozinho e o dominio real da maquina, descoberto em
-# tempo de execucao por Get-SufixosDns.
-#
-# A versao da clinica tinha o dominio dela chumbado, em dois lugares. Em qualquer
-# outra rede isso e uma consulta de DNS que sempre falha - e, pior, o nome de um
-# servidor de terceiro sendo consultado por uma maquina que nao e dele.
 $script:SufixosDnsExtra = @()
 
-# Arvores de DADO CLINICO. Governa o veredicto dos Modulos 3 e 4: o que casar
-# aqui nunca e sugerido para apagar, nem como arquivo nem como pasta.
-#
-# Estava duplicado em Get-VeredictoArquivo e Get-VeredictoPasta, e as duas
-# listas tinham DIVERGIDO: a de pasta nao tinha \Patients\, \ARIA, MOSAIQ,
-# VitreaData nem Monaco. Uma pasta de paciente do Vitrea caia no veredicto
-# generico 'confira o conteudo antes de mover ou apagar'. Agora e uma lista so.
-#
-# Levantado com a sessao do sincronizador Vitrea em 15/09/2026. Se uma raiz
-# nova de exame entrar em uso, ACRESCENTE AQUI antes de ela existir no disco.
 $script:RaizesClinicas =
     'Vitrea|VitreaData|\\Patients\\|\\Patients$' +
     '|\\radioterapia\\TC_DATA' +
@@ -112,46 +35,27 @@ $script:RaizesClinicas =
     '|VspApp|VspMgmt' +
     '|Digitalcore|\\Onis'
 
-# PORTAIS. Vazios de proposito: os enderecos sao de cada servico, e os da clinica
-# de origem sairam junto com o resto da rede dela.
-#
-# CitrixStores vazio nao desliga o diagnostico de Citrix: ele passa a relatar o
-# que encontra na maquina sem ter destino para comparar. TasyUrls vazio faz o kit
-# procurar sozinho nos atalhos da area de trabalho, no menu Iniciar e nos
-# favoritos dos navegadores - caminho que ja existia, e que e o certo aqui porque
-# nao presume nome de prontuario nenhum.
-#
-# Tasy e o prontuario da Philips usado no Brasil. Numa versao universal ele e UM
-# caso entre muitos: Epic, Cerner, MEDITECH, Soarian, Sectra. Ver PENDENCIAS.md.
 $script:CitrixStores = @()
 $script:TasyUrls = @()
 $script:TasyDescobertas = $null
 
 $script:Lim = @{
-    DiscoCritPct    = 10     # % livre em C: abaixo disso = critico
+    DiscoCritPct    = 10
     DiscoAlertaPct  = 15
     RamCritPct      = 90
     RamAlertaPct    = 80
-    # O kit e para rodar LOGO APOS LOGAR. Acima disso, avisa.
-    MomentoRecemMin = 20     # minutos de sessao que ainda contam como 'recem logado'
-    UptimeAlertaH   = 72     # horas sem reiniciar
+
+    MomentoRecemMin = 20
+    UptimeAlertaH   = 72
     UptimeCritH     = 168
-    CitrixMs        = 3000   # resposta aceitavel do portal Citrix
+    CitrixMs        = 3000
     ArquivoGrandeMB = 100
-    # Processo de fundo que o kit nao reconhece e que ocupa mais que isso vem
-    # DESMARCADO: acima deste tamanho e mais provavel ser trabalho em andamento
-    # que lixo. Medido nesta maquina: o maior grupo dispensavel desconhecido tem
-    # 18 MB e o maior conhecido 52 MB, entao sobra folga larga para o lixo real.
+
     SessaoDesconhecidoMB = 300
-    # Item de cache mexido nos ultimos N minutos nao e apagado, mesmo em alvo sem
-    # filtro de idade. Nao muda a politica de retencao - continua limpando o lixo
-    # de hoje -, so recusa apagar o que esta sendo escrito neste instante.
+
     CacheFrescoMin = 15
 }
 
-# =====================================================================
-# 2. ESTADO INTERNO
-# =====================================================================
 $script:Achados      = New-Object System.Collections.ArrayList
 $script:AlvosAtuais  = @()
 $script:PlanoAtual   = @()
@@ -163,28 +67,21 @@ $script:UltimaPrioridade   = $null
 $script:ExplorerAtualizado = $false
 $script:LogonSegundos      = 0
 $script:StatusSessao       = $null
-$script:DiasCorte    = 7    # idade minima para TODA a rotina: 3, 7, 15, 30 ou 0 (tudo)
+$script:DiasCorte    = 7
 $script:Cancelar     = $false
-# Instantaneos de uma operacao. Descartados no inicio de cada modulo, nunca
-# reaproveitados entre cliques: decisao sobre encerrar processo clinico nao
-# pode usar dado de uma operacao anterior.
+
 $script:SnapProc       = $null
 $script:SnapSvc        = $null
 $script:EmUsoOperacao  = $null
-# Quando cada instantaneo foi tirado, e por quanto tempo ele vale. O prazo e em
-# SEGUNDOS de propósito: um Aplicar longo passa minutos entre o primeiro e o
-# ultimo encerramento, e worker de inferencia nasce nesse meio.
+
 $script:SnapProcEm       = $null
 $script:EmUsoOperacaoEm  = $null
 $script:SnapMaxSeg       = 15
-# Lista de processos JA CLASSIFICADA, por operacao. Duas fatias, porque
-# -TodasAsSessoes responde outra pergunta. Ver Get-ProcessosSessao: e retrato
-# para MOSTRAR, e nao entra em decisao de encerrar.
+
 $script:SnapSessao       = @{}
 $script:SnapGrupos       = $null
 $script:Ocupado      = $false
 
-# Paleta: escala de dose (azul frio -> verde -> amarelo -> vermelho quente)
 $script:Cor = @{
     Fundo    = [System.Drawing.Color]::FromArgb(18, 22, 28)
     Painel   = [System.Drawing.Color]::FromArgb(28, 34, 43)
@@ -199,9 +96,6 @@ $script:Cor = @{
     Botao    = [System.Drawing.Color]::FromArgb(38, 47, 59)
 }
 
-# =====================================================================
-# 3. FUNCOES DE APOIO
-# =====================================================================
 function Pump { [System.Windows.Forms.Application]::DoEvents() }
 
 function Format-Bytes {
@@ -297,7 +191,6 @@ function Set-Ocupado {
     Pump
 }
 
-# --- medicao de tamanho (robocopy e rapido e nao precisa de admin) ---
 function Get-TamanhoPasta {
     param([string]$Caminho, [int]$TimeoutSeg = 90)
     if ([string]::IsNullOrWhiteSpace($Caminho)) { return -1 }
@@ -396,33 +289,8 @@ function Get-ValorReg {
     try { return (Get-ItemProperty -Path $Caminho -Name $Nome -ErrorAction Stop).$Nome } catch { return $null }
 }
 
-# =====================================================================
-# 4. MODULO 1 - PREPARAR AMBIENTE
-# =====================================================================
 function Get-ConteudoPreparador {
-    # ------------------------------------------------------------------
-    # Rotina de preparacao de ambiente, embutida no aplicativo.
-    # Para editar: altere aqui dentro. E gravada em ANSI (1252) antes de rodar.
-    # ------------------------------------------------------------------
-    # VAZIO NA VERSAO UNIVERSAL, e de proposito.
-    #
-    # Aqui viviam 358 linhas de batch que preparavam a arvore de trabalho de UM
-    # hospital: portais em Excel copiados de um compartilhamento, atalhos na area
-    # de trabalho, fonte de codigo de barras, mapeamento de unidade de rede e
-    # testes de alcance de tres servidores por nome. Saiu junto a rede daquele
-    # hospital: o dominio, o fileserver e dois IPs internos.
-    #
-    # Devolver vazio NAO pode virar sucesso silencioso, e por isso Save-Preparador
-    # ganhou uma guarda: string vazia faz ele devolver $null em vez de gravar um
-    # .bat de zero byte. Sem ela, o Modulo 1 executaria um batch vazio, que sai
-    # com codigo 0 sem imprimir nada, e o log diria "Executando:" e mais nada -
-    # exatamente o defeito que este projeto persegue desde o xcopy silenciado.
-    #
-    # Com $null, Invoke-PrepararAmbiente explica e pede um .bat ao usuario. O
-    # Modulo 1 da versao universal e "rode o seu script de preparacao", que e uma
-    # funcao legitima em qualquer maquina.
-    #
-    # Se um dia houver rotina universal de preparacao, ela nasce aqui.
+
     return ''
 }
 
@@ -431,10 +299,7 @@ function Save-Preparador {
         if (-not (Test-Path -LiteralPath $script:PastaEstado)) {
             New-Item -ItemType Directory -Path $script:PastaEstado -Force | Out-Null
         }
-        # Sem conteudo, NAO grava. Um .bat de zero byte roda, sai com codigo 0 e
-        # nao imprime nada: o log diria "Executando:" e depois nada, e quem le
-        # concluiria que a preparacao rodou. Devolver $null faz o Modulo 1
-        # explicar e pedir um script ao usuario.
+
         $conteudo = Get-ConteudoPreparador
         if (-not "$conteudo".Trim()) { return $null }
         $destino = Join-Path $script:PastaEstado 'Preparar_Workstation.bat'
@@ -504,9 +369,7 @@ function Invoke-PrepararAmbiente {
     } else {
         $bat = Save-Preparador
         if (-not $bat) {
-            # Esta versao nao traz rotina embutida: a que existia era da arvore de
-            # trabalho de um hospital so. Dizer isso e melhor que abrir um dialogo
-            # sem explicar por que ele apareceu.
+
             Write-Log 'Esta versao nao traz rotina de preparacao embutida.' 'DADO'
             Write-Log 'O Modulo 1 roda o script de preparacao que VOCE indicar.' 'DADO'
             Write-Log 'Selecione um arquivo .bat ou .cmd de preparacao.' 'ACAO'
@@ -550,7 +413,7 @@ function Invoke-PrepararAmbiente {
             $linhas = $todo -split "`r?`n"
             for ($i = $impressas; $i -lt $linhas.Count; $i++) {
                 $l = $linhas[$i]
-                if ($i -eq ($linhas.Count - 1) -and -not $proc.HasExited) { break }  # linha pode estar incompleta
+                if ($i -eq ($linhas.Count - 1) -and -not $proc.HasExited) { break }
                 if ($l -match '\[ERRO|\[AVISO|\[ALERTA') { Write-Log $l.Trim() 'ALERTA' }
                 elseif ($l -match '\[SUCESSO|\[ATUALIZADO|sucesso')       { Write-Log $l.Trim() 'DADO' }
                 elseif ($l.Trim())                                        { Write-Log $l.TrimEnd() 'BRUTO' }
@@ -579,7 +442,6 @@ function Invoke-PrepararAmbiente {
     Write-Log 'Preparacao de ambiente concluida.' 'OK'
     Write-Log ('Saida completa salva em: {0}' -f $saida) 'DADO'
 
-    # conferencia rapida do resultado
     $pops = Join-Path $script:PastaClinica 'POPs - RADIOTERAPIA'
     if (Test-Path -LiteralPath $pops) {
         $arq = @(Get-ChildItem -LiteralPath $pops -File -Recurse -ErrorAction SilentlyContinue)
@@ -607,12 +469,6 @@ function Invoke-PrepararAmbiente {
     }
 }
 
-# =====================================================================
-# 4B. CATALOGO DO QUE E SEGURO ENCERRAR E DESATIVAR
-# =====================================================================
-
-# Nunca encerrar nem desativar: clinico, seguranca, rede corporativa,
-# drivers e qualquer programa que possa ter documento aberto.
 $script:Protegidos = 'wfica32|wfcrun32|CDViewer|SelfService|Receiver|concentr|CtxWebHelper|AuthManSvr|redirector|HdxRtcEngine|CtxCFRUI|Citrix|tasy|TasyAgent|CentBrowser|javaw|^java$|jp2launcher|Wheb|Philips|CcmExec|ntrtscan|tmlisten|TMBM|PccNTMon|ShowMsg|smartscreen|unsecapp|SearchProtocolHost|SearchFilterHost|DSASvc|QualysAgent|stAgent|Cortex|cyserver|cytray|cyvera|traps|LsAgent|Quest|OnDemand|ODMActiveDirectory|SecureConnector|ARIA|Eclipse|Varian|Vitrea|MIM|MOSAIQ|RayStation|Monaco|Velocity|Osirix|Horos|Weasis|dicom|PACS|EXCEL|WINWORD|POWERPNT|OUTLOOK|MSACCESS|onenote|StickyNot|msedge|chrome|firefox|iexplore|notepad|wordpad|Acrobat|AcroRd32|AnyConnect|GlobalProtect|FortiClient|Pulse|CcmExec|CmRcService|ccmsetup|CSFalcon|CSAgent|Sophos|SAVService|^mfe|masvc|macmnsvc|McShield|ccSvcHst|SepMaster|ZSA|stAgent|nsdiag|ivanti|LANDesk|Forcepoint|splunk|nxlog|MsMpEng|NisSrv|SecurityHealth|Acronis|^mms$|Veeam|CommVault|^cvd$|^CvMountd$|TrueImage|Macrium|^Reflect|ShadowProtect|Arcserve|Datto|Carbonite|IDriveService|Realtek|RtkAud|IDTNC|Synaptics|igfx|nvcontainer|audiodg|System|Idle|Registry|smss|csrss|wininit|winlogon|^services$|lsass|svchost|fontdrvhost|dwm|explorer|RuntimeBroker|sihost|ctfmon|taskhostw|dllhost|conhost|WmiPrvSE|powershell|pwsh|LogonUI|SearchIndexer'
 
 function Get-CatalogoProcessos {
@@ -749,7 +605,6 @@ function Get-AjustesPendentes {
         $lista += [pscustomobject]@{ Id = 'CITRIXZONA'; Rotulo = ('Confiar nos enderecos do Citrix ({0})' -f ($zonas -join ', ')); Nota = 'Faz o login unico funcionar e o .ica abrir sozinho.' }
     }
 
-    # barra de tarefas: pesquisa, visao de tarefas, widgets e botao de chat
     $sb = Get-ValorReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' 'SearchboxTaskbarMode'
     $tv = Get-ValorReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' 'ShowTaskViewButton'
     $wd = Get-ValorReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' 'TaskbarDa'
@@ -757,7 +612,6 @@ function Get-AjustesPendentes {
         $lista += [pscustomobject]@{ Id = 'BARRATAREFAS'; Rotulo = 'Limpar a barra de tarefas (pesquisa, visao de tarefas, widgets)'; Nota = 'Some da barra e para de consumir memoria. Reversivel.' }
     }
 
-    # icone do OneDrive no painel esquerdo do Explorer
     $odIco = Get-ValorReg 'HKCU:\Software\Classes\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}' 'System.IsPinnedToNameSpaceTree'
     if ($odIco -ne 0) {
         $lista += [pscustomobject]@{ Id = 'ONEDRIVEICONE'; Rotulo = 'Tirar o icone do OneDrive do Explorer'; Nota = 'So esconde o atalho. Os arquivos e a conta continuam intactos.' }
@@ -782,9 +636,6 @@ function Get-MapeamentosMortos {
     return $mortos
 }
 
-# =====================================================================
-# 4C. CITRIX - ARIA, MOSAIQ E MONACO PUBLICADOS
-# =====================================================================
 function Get-InfoUrl {
     param([string]$Url)
     try { $u = [uri]$Url } catch { return $null }
@@ -798,7 +649,7 @@ function Get-InfoUrl {
 }
 
 function Get-CitrixInstalado {
-    # 1. processo em execucao entrega o caminho real do cliente
+
     foreach ($n in @('SelfService', 'SelfServicePlugin', 'Receiver', 'wfica32', 'wfcrun32', 'concentr', 'CDViewer')) {
         try {
             $p = Get-Process -Name $n -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -808,7 +659,7 @@ function Get-CitrixInstalado {
             }
         } catch { }
     }
-    # 2. arquivos conhecidos
+
     $arquivos = @(
         (Join-Path ${env:ProgramFiles(x86)} 'Citrix\ICA Client\wfica32.exe'),
         (Join-Path $env:ProgramFiles 'Citrix\ICA Client\wfica32.exe'),
@@ -823,7 +674,7 @@ function Get-CitrixInstalado {
             } catch { }
         }
     }
-    # 3. registro
+
     foreach ($k in @('HKLM:\SOFTWARE\WOW6432Node\Citrix\InstallDetect\*', 'HKLM:\SOFTWARE\Citrix\InstallDetect\*',
                      'HKLM:\SOFTWARE\WOW6432Node\Citrix\ICA Client', 'HKLM:\SOFTWARE\Citrix\ICA Client')) {
         try {
@@ -903,7 +754,7 @@ function Test-UrlHttp {
     } catch {
         $msg = "$($_.Exception.Message)"
         if ($msg -match 'SSL|TLS|certificad|certificate|secure channel|confianca|trust') {
-            # repete ignorando o certificado, so para saber se o servidor responde
+
             $antes = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
             try {
                 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
@@ -960,7 +811,7 @@ function Test-ZonaIntranet {
         } catch { }
         return $false
     }
-    if ($Servidor -notmatch '\.') { return $true }   # nome simples ja cai na Intranet
+    if ($Servidor -notmatch '\.') { return $true }
     $partes  = $Servidor.Split('.')
     $dominio = ($partes[-2..-1] -join '.')
     $sub     = $(if ($partes.Count -gt 2) { ($partes[0..($partes.Count - 3)] -join '.') } else { '' })
@@ -986,7 +837,7 @@ function Add-ZonaIntranet {
             $criadas += $k
         } else {
             $partes  = $Servidor.Split('.')
-            if ($partes.Count -lt 2) { return @() }   # nome simples ja e Intranet
+            if ($partes.Count -lt 2) { return @() }
             $dominio = ($partes[-2..-1] -join '.')
             $sub     = $(if ($partes.Count -gt 2) { ($partes[0..($partes.Count - 3)] -join '.') } else { '' })
             $k = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\' + $dominio
@@ -1041,7 +892,6 @@ function Set-AjusteZonasCitrix {
 function Invoke-DiagCitrix {
     Write-Titulo 'Diagnostico do Citrix (ARIA, MOSAIQ e Monaco)'
 
-    # ---- cliente ----
     $cli = Get-CitrixInstalado
     if ($cli.Instalado) {
         $maior = 0
@@ -1055,7 +905,6 @@ function Invoke-DiagCitrix {
         Add-Achado 'CRITICO' 'Citrix Workspace nao encontrado nesta maquina' 'Sem o cliente instalado o ARIA/MOSAIQ/Monaco nao abrem. Instalacao exige o TI.' 'Citrix' 'Alto'
     }
 
-    # ---- sessao em andamento ----
     $pr = Get-CitrixProcessos
     if ($pr.Rodando) {
         Write-Log ('Citrix em execucao: {0} processo(s), {1} - {2}' -f $pr.Qtd, (Format-Bytes $pr.Memoria), ($pr.Nomes -join ', ')) 'DADO'
@@ -1066,7 +915,6 @@ function Invoke-DiagCitrix {
         Write-Log 'Nenhum processo do Citrix em execucao.' 'DADO'
     }
 
-    # ---- stores configurados x esperados ----
     $conf = Get-CitrixStoresConfigurados
     if ($conf.Count -gt 0) {
         Write-Log 'Stores ja configurados no Workspace deste usuario:' 'DADO'
@@ -1075,7 +923,6 @@ function Invoke-DiagCitrix {
         Write-Log 'Nenhum store gravado no perfil do usuario (acesso so pelo navegador).' 'DADO'
     }
 
-    # ---- teste de cada destino ----
     foreach ($s in $script:CitrixStores) {
         if ($script:Cancelar) { return }
         $i = Get-InfoUrl -Url $s.Url
@@ -1087,7 +934,6 @@ function Invoke-DiagCitrix {
         Write-Log ('Endereco ..: {0}' -f $s.Url) 'DADO'
         Set-Status ('Testando ' + $s.Nome + '...')
 
-        # nome -> IP, com tentativa pelo nome completo quando o curto falha
         $alvo    = $i.Servidor
         $urlTeste = $s.Url
         if (-not $i.EhIp) {
@@ -1119,14 +965,13 @@ function Invoke-DiagCitrix {
             }
         }
 
-        # portas
         $portas = @(80, 443)
         $abertas = @()
         foreach ($p in $portas) {
             $t = Test-PortaTcp -Alvo $alvo -Porta $p -TimeoutMs 1500
             if ($t.Ok) { $abertas += ('{0} ({1} ms)' -f $p, $t.Ms) }
         }
-        # portas do protocolo ICA, usadas depois que o app e lancado
+
         $ica = Test-PortaTcp -Alvo $alvo -Porta 1494 -TimeoutMs 1200
         $rel2598 = Test-PortaTcp -Alvo $alvo -Porta 2598 -TimeoutMs 1200
         Write-Log ('Portas web : {0}' -f $(if ($abertas.Count -gt 0) { $abertas -join ' · ' } else { 'nenhuma respondeu' })) 'DADO'
@@ -1138,7 +983,6 @@ function Invoke-DiagCitrix {
             continue
         }
 
-        # pagina do store
         $r = Test-UrlHttp -Url $urlTeste
         if ($r.Codigo -ge 200 -and $r.Codigo -lt 400) {
             if ($r.Ms -gt $script:Lim.CitrixMs) {
@@ -1154,14 +998,12 @@ function Invoke-DiagCitrix {
             Add-Achado 'CRITICO' ('{0}: portal nao respondeu' -f $s.Nome) ('Detalhe: ' + $r.Erro) 'Citrix' 'Alto'
         }
 
-        # zona de seguranca (sem isso o login unico falha e o .ica nao abre sozinho)
         if (Test-ZonaIntranet -Servidor $i.Servidor) {
             Write-Log 'Zona ......: ja esta na Intranet (login unico funciona)' 'DADO'
         } else {
             Add-Achado 'ALERTA' ('{0}: {1} nao esta na zona de Intranet' -f $s.Nome, $i.Servidor) 'E o que faz o navegador pedir senha de novo e nao abrir o arquivo .ica sozinho. O Modulo 3 corrige com um clique.' 'Citrix' 'Alto'
         }
 
-        # HTTP x HTTPS: o atalho pode estar desatualizado
         if (-not $i.Https) {
             if ("$($r.UrlFinal)" -match '^https://') {
                 Write-Log 'Seguranca .: o servidor redireciona sozinho para HTTPS. O atalho pode ficar como esta.' 'DADO'
@@ -1179,7 +1021,6 @@ function Invoke-DiagCitrix {
         }
     }
 
-    # ---- proxy ----
     $proxyOn = Get-ValorReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' 'ProxyEnable'
     if ($proxyOn -eq 1) {
         $srv = Get-ValorReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' 'ProxyServer'
@@ -1197,7 +1038,6 @@ function Invoke-DiagCitrix {
         }
     }
 
-    # ---- cache local ----
     $caches = Get-CitrixCaches
     $tot = 0.0
     foreach ($c in $caches) {
@@ -1222,9 +1062,6 @@ function Invoke-DiagCitrix {
     Write-Log 'Se todos falham, e rede ou perfil da estacao.' 'DADO'
 }
 
-# =====================================================================
-# 4D. INVENTARIO DA ESTACAO (retrato, somente leitura)
-# =====================================================================
 $script:ItensInv = New-Object System.Collections.ArrayList
 
 function Add-ItemInv {
@@ -1369,7 +1206,6 @@ function Invoke-InvSoftware {
         Add-ItemInv 'Servidor' 'Nenhum' 'estacao comum'
     }
 
-    # agentes corporativos, so para registro
     $agentes = @($svcs | Where-Object { $_.State -eq 'Running' -and ($_.Name -match 'CcmExec|DSASvc|ntrtscan|tmlisten|TMBM|QualysAgent|stAgent|Cortex|cyserver|cyvera|LsAgent|Quest|OnDemand') })
     if ($agentes.Count -gt 0) {
         Write-Log ('Agentes corporativos em execucao: {0}' -f (($agentes | Select-Object -ExpandProperty Name) -join ', ')) 'DADO'
@@ -1523,7 +1359,6 @@ function Invoke-InvRedeImpressoras {
     } catch { }
 }
 
-# ---- residuos de migracao de dominio ------------------------------
 function Get-CredenciaisOrfas {
     $orfas = @()
     try {
@@ -1561,7 +1396,6 @@ function Invoke-InvMigracao {
         Write-Log 'Nenhum agente de migracao instalado.' 'DADO'
     }
 
-    # pasta do perfil com nome de outra conta: heranca classica de migracao
     $pastaPerfil = Split-Path $env:USERPROFILE -Leaf
     if ($pastaPerfil -and ($pastaPerfil -ne $env:USERNAME)) {
         Write-Log ('Usuario logado .....: {0}' -f $env:USERNAME) 'DADO'
@@ -1586,14 +1420,12 @@ function Invoke-InvMigracao {
     }
 }
 
-# ---- gravacao do inventario ---------------------------------------
 function Save-Inventario {
     Write-Titulo 'Relatorio'
     $carimbo = Get-Date -Format 'yyyyMMdd_HHmm'
     $base = 'Inventario_{0}_{1}' -f $env:COMPUTERNAME, $carimbo
     $pasta = $script:PastaRelatorios
 
-    # sem fallback: se a pasta de logs nao estiver acessivel, nao grava nada
     $acessivel = $false
     try {
         if ($pasta -like '\\*') {
@@ -1637,7 +1469,6 @@ function Get-VeredictoArquivo {
     $p = "$($Arquivo.FullName)"
     $e = "$($Arquivo.Extension)".ToLower()
 
-    # ---- MANTER: arquivo de sistema, dado clinico, banco, programa ----
     if ($Arquivo.Name -match '^(hiberfil|pagefile|swapfile)\.sys$')      { return @{ V = 'MANTER';  M = 'Arquivo de sistema do Windows. Apagar quebra a maquina.' } }
     if ($e -match '^\.(mdf|ldf|ndf|bak|trn|dbf)$')                       { return @{ V = 'MANTER';  M = 'Arquivo de banco de dados. Apagar derruba o sistema.' } }
     if (Test-DentroDaPasta -Caminho $p -Pasta $script:PastaClinica)      { return @{ V = 'MANTER';  M = 'Esta na pasta clinica.' } }
@@ -1651,7 +1482,6 @@ function Get-VeredictoArquivo {
     if ($e -match '^\.(exe|dll|msi|sys)$' -and $p -match '\\AppData\\Local\\' -and $p -notmatch '\\Temp\\|\\Downloads\\|[Cc]ache') { return @{ V = 'MANTER'; M = 'Programa instalado dentro do seu perfil.' } }
     if ($e -match '^\.(xlsb|xlsm)$')                                     { return @{ V = 'MANTER';  M = 'Planilha de trabalho.' } }
 
-    # ---- SEGURO: descartavel ----
     if ($e -match '^\.(dmp|mdmp|hdmp)$')                                 { return @{ V = 'SEGURO';  M = 'Despejo de travamento. Nao tem uso.' } }
     if ($e -match '^\.(iso|img|vhd|vhdx|wim|esd)$')                      { return @{ V = 'SEGURO';  M = 'Imagem de instalacao, serve so uma vez.' } }
     if ($e -match '^\.(msi|msp|exe)$' -and $p -match '\\Downloads\\|\\Temp\\|\\Temporar|C:\\Temp') { return @{ V = 'SEGURO'; M = 'Instalador ja usado.' } }
@@ -1659,13 +1489,11 @@ function Get-VeredictoArquivo {
     if ($p -match '\\Temp\\|\\Temporar|[Cc]ache|\\CrashDumps\\|\\WER\\|\\INetCache\\|\\Downloaded Installations\\') { return @{ V = 'SEGURO'; M = 'Esta em pasta de cache ou temporaria.' } }
     if ($e -match '^\.(log|etl|old|tmp|chk|gid)$')                       { return @{ V = 'SEGURO';  M = 'Log ou sobra de instalacao.' } }
 
-    # ---- resto: decisao do usuario ----
     if ($e -match '^\.(zip|rar|7z|cab)$')                                { return @{ V = 'REVISAR'; M = 'Compactado. Se ja foi extraido, pode apagar.' } }
     if ($e -match '^\.(mp4|avi|mkv|mov|wmv|mp3|wav)$')                   { return @{ V = 'REVISAR'; M = 'Midia. Mova para a rede se for do servico.' } }
     if ($e -match '^\.(pdf|docx|doc|xlsx|pptx|accdb)$')                  { return @{ V = 'REVISAR'; M = 'Documento. Confirme se ja existe copia na rede.' } }
     return @{ V = 'REVISAR'; M = 'Nao reconhecido. Confira antes de apagar.' }
 }
-
 
 function Test-EnderecoInterno {
     param([string]$Servidor)
@@ -1679,7 +1507,7 @@ function Test-EnderecoInterno {
         }
         return $false
     } catch {
-        # nao resolveu: so trata como interno se o nome pertencer ao dominio da rede
+
         $sufixo = ''
         try { $sufixo = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().DomainName } catch { }
         if (-not $sufixo) { $sufixo = "$env:USERDNSDOMAIN" }
@@ -1710,7 +1538,6 @@ function Measure-RespostaHttp {
         Start-Sleep -Milliseconds 250
     }
 
-    # a mediana ignora o pico unico da primeira conexao, que a media inflava
     $tcpMed = -1; $tcpMin = -1; $tcpMax = -1
     if ($tcp.Count -gt 0) {
         $ord = @($tcp | Sort-Object)
@@ -1736,9 +1563,6 @@ function Measure-RespostaHttp {
     }
 }
 
-# =====================================================================
-# 4E. TASY - PRONTUARIO ELETRONICO
-# =====================================================================
 function Get-TasyProcessos {
     $nomes = @('tasy', 'TasyAgent', 'tasy-agentw', 'TasyAgentTray', 'javaw', 'java', 'jp2launcher', 'CentBrowser')
     $ps = @(Get-Process -Name $nomes -ErrorAction SilentlyContinue)
@@ -1753,7 +1577,6 @@ function Get-TasyProcessos {
 function Get-TasyUrlsDescobertas {
     $achadas = @()
 
-    # 1. atalhos .url e .lnk da area de trabalho e do menu iniciar
     $pastas = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory'),
                 [Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('CommonPrograms'))
     foreach ($pasta in $pastas) {
@@ -1778,7 +1601,6 @@ function Get-TasyUrlsDescobertas {
         } catch { }
     }
 
-    # 2. favoritos dos navegadores (so as entradas que citam Tasy)
     $bases = @(
         (Join-Path $env:LOCALAPPDATA 'CentBrowser\User Data'),
         (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'),
@@ -1796,7 +1618,6 @@ function Get-TasyUrlsDescobertas {
         } catch { }
     }
 
-    # normaliza para a raiz do servidor
     $raizes = @()
     foreach ($u in $achadas) {
         try {
@@ -1808,8 +1629,6 @@ function Get-TasyUrlsDescobertas {
     }
     return @($raizes | Select-Object -Unique)
 }
-
-
 
 function Get-TasyUrlsEfetivas {
     if ($script:TasyUrls -and $script:TasyUrls.Count -gt 0) { return @($script:TasyUrls) }
@@ -1834,13 +1653,11 @@ function Get-CacheJava {
 function Invoke-DiagTasy {
     Write-Titulo 'Diagnostico do Tasy (prontuario eletronico)'
 
-    # =============== 1. cliente na estacao ===============
     $prog = Get-ProgramasInstalados
     $tasyProg = @($prog | Where-Object { $_.Nome -match 'Tasy|Philips.*Tasy|Wheb' })
     foreach ($t in $tasyProg) { Write-Log ('Instalado: {0} {1}' -f $t.Nome, $t.Versao) 'DADO'; Add-ItemInv 'Tasy' 'Cliente' $t.Nome $t.Versao }
     if ($tasyProg.Count -eq 0) { Write-Log 'Sem cliente instalado: o Tasy roda no navegador (Wheb HTML5).' 'DADO' }
 
-    # navegador do prontuario: e ele quem carrega a tela do Tasy
     $navProcs = @(Get-Process -Name 'CentBrowser', 'msedge', 'chrome' -ErrorAction SilentlyContinue)
     if ($navProcs.Count -gt 0) {
         $porNav = $navProcs | Group-Object ProcessName | ForEach-Object {
@@ -1856,7 +1673,6 @@ function Invoke-DiagTasy {
         }
     }
 
-    # cliente Java (Tasy antigo / relatorios)
     try {
         $javas = @(Get-CimInstance Win32_Process -Filter "Name='javaw.exe' OR Name='java.exe'" -ErrorAction SilentlyContinue)
         foreach ($j in $javas) {
@@ -1870,7 +1686,6 @@ function Invoke-DiagTasy {
         }
     } catch { }
 
-    # =============== 2. cada destino ===============
     $urls = Get-TasyUrlsEfetivas
     if ($urls.Count -eq 0) {
         Add-Achado 'ALERTA' 'Nenhum endereco do Tasy configurado' 'Preencha $script:TasyUrls na secao 1 do aplicativo.' 'Tasy' 'Medio'
@@ -1892,7 +1707,6 @@ function Invoke-DiagTasy {
         $interno = Test-EnderecoInterno -Servidor $i.Servidor
         Write-Log ('Tipo ......: {0}' -f $(if ($interno) { 'servidor interno da rede' } else { 'servico externo, sai pela internet' })) 'DADO'
 
-        # DNS
         $alvo = $i.Servidor
         if (-not $i.EhIp) {
             try {
@@ -1907,7 +1721,6 @@ function Invoke-DiagTasy {
             }
         }
 
-        # portas
         $porta = $i.Porta
         $abertas = @()
         foreach ($p in @($porta, 80, 443, 8080, 28080 | Select-Object -Unique)) {
@@ -1921,7 +1734,6 @@ function Invoke-DiagTasy {
             continue
         }
 
-        # ---- medicao de desempenho: separa rede de servidor ----
         Write-Log 'Medindo o tempo de resposta (4 amostras)...' 'DADO'
         $m = Measure-RespostaHttp -Url $d.Url -Alvo $alvo -Porta $porta -Amostras 4
 
@@ -1958,8 +1770,6 @@ function Invoke-DiagTasy {
             Add-Achado 'ALERTA' ('{0}: resposta instavel (variou de {1} a {2} ms)' -f $d.Nome, $m.HttpMin, $m.HttpMax) 'Oscilacao desse tamanho e o que faz a tela do Tasy "travar" de vez em quando. Registre no chamado com o horario.' 'Tasy' 'Alto'
         }
 
-
-        # HTTP x HTTPS: o atalho pode estar desatualizado
         if (-not $i.Https) {
             if ("$($m.UrlFinal)" -match '^https://') {
                 Write-Log 'Seguranca .: o servidor redireciona sozinho para HTTPS. O atalho pode ficar como esta.' 'DADO'
@@ -1976,8 +1786,6 @@ function Invoke-DiagTasy {
             Add-Achado 'ALERTA' ('{0}: certificado HTTPS nao confiavel nesta estacao' -f $d.Nome) 'O navegador mostra aviso de site nao seguro e pode bloquear download e impressao. Peca ao TI a instalacao do certificado da autoridade interna.' 'Tasy' 'Alto'
         }
 
-        # O Tasy Wheb usa login por formulario proprio: a zona de Intranet do Windows
-        # nao interfere. Fica so o registro, sem virar pendencia.
         if ($interno -and -not (Test-ZonaIntranet -Servidor $i.Servidor)) {
             Write-Log 'Zona ......: fora da Intranet do Windows - sem efeito aqui, o Tasy tem login proprio.' 'DADO'
         }
@@ -1985,7 +1793,6 @@ function Invoke-DiagTasy {
         $resumo += [pscustomobject]@{ Nome = $d.Nome; Http = $m.HttpMed; Tcp = $m.TcpMed; Situacao = $situacao }
     }
 
-    # =============== 3. comparativo ===============
     if ($resumo.Count -gt 1) {
         Write-Log '' 'DADO'
         Write-Log 'COMPARATIVO ENTRE OS AMBIENTES' 'TITULO'
@@ -2004,7 +1811,6 @@ function Invoke-DiagTasy {
         }
     }
 
-    # =============== 4. caches e proxy ===============
     Write-Log '' 'DADO'
     $cj = Get-CacheJava
     $totJava = 0.0
@@ -2050,11 +1856,6 @@ function Invoke-DiagTasy {
     Write-Log '' 'DADO'
     Write-Log 'Peca ao TI a exclusao das pastas de cache do navegador e do Java na varredura do antivirus: e ganho direto na navegacao do Tasy.' 'ACAO'
 }
-
-# =====================================================================
-# 5. MODULO 2 - DIAGNOSTICO
-# =====================================================================
-
 
 function Invoke-DiagMemoria {
     Write-Titulo 'Memoria RAM'
@@ -2103,11 +1904,6 @@ function Invoke-DiagMemoria {
     } catch { }
 }
 
-
-
-
-
-
 function Invoke-DiagCaches {
     Write-Titulo 'Espaco recuperavel (previa da limpeza)'
     $alvos = Get-AlvosLimpeza
@@ -2130,9 +1926,6 @@ function Invoke-DiagCaches {
     }
 }
 
-
-
-# ---- diagnostico acionavel: so o que o Modulo 3 resolve --------------
 function Invoke-DiagSistemaAcionavel {
     Write-Titulo 'Estado da maquina'
     try {
@@ -2172,7 +1965,6 @@ function Invoke-DiagEspaco {
         }
     } catch { Write-Log 'Nao foi possivel ler as unidades.' 'ALERTA' }
 
-    # C:\Windows\Temp nao e do usuario, mas pesa e serve de anexo no chamado
     try {
         $wt = Get-TamanhoPasta -Caminho (Join-Path $env:SystemRoot 'Temp') -TimeoutSeg 45
         if ($wt -gt 1GB) {
@@ -2224,19 +2016,18 @@ function Invoke-DiagEncerraveis {
 function Invoke-DiagInicioAcionavel {
     Write-Titulo 'Inicializacao do Windows'
 
-    # quanto tempo levou do boot ate a area de trabalho
     try {
         $so  = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
         $exp = $null
         foreach ($e in @(Get-Process explorer -ErrorAction SilentlyContinue)) {
-            try { $st = $e.StartTime } catch { continue }   # processo de outra sessao: acesso negado
+            try { $st = $e.StartTime } catch { continue }
             if (-not $exp -or $st -lt $exp.StartTime) { $exp = $e }
         }
         if ($exp -and $exp.StartTime -gt $so.LastBootUpTime) {
             $seg = [Math]::Round(($exp.StartTime - $so.LastBootUpTime).TotalSeconds)
             $script:LogonSegundos = $(if ($seg -le 1200) { $seg } else { 0 })
             if ($seg -gt 1200) {
-                # a maquina ficou ligada antes do logon: a conta nao mede inicializacao
+
                 Write-Log ('A maquina ficou {0:N1} h ligada antes deste logon.' -f ($seg / 3600)) 'DADO'
                 Write-Log 'Por isso nao da para medir o tempo de inicializacao nesta sessao.' 'DADO'
                 Write-Log 'Para medir: reinicie e rode o Modulo 2 logo depois de entrar.' 'ACAO'
@@ -2263,7 +2054,6 @@ function Invoke-DiagInicioAcionavel {
         foreach ($i in $outros) { Write-Log ('[  manter  ] {0,-30} {1}' -f $i.Nome, $i.Rotulo) 'DADO' }
     }
 
-    # logon longo com poucos itens de usuario: a conta esta em outro lugar
     if ($script:LogonSegundos -gt 90) {
         $unidades = @()
         try { $unidades = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=4' -ErrorAction SilentlyContinue) } catch { }
@@ -2330,18 +2120,10 @@ function Invoke-DiagMapeamentos {
     Add-Achado 'CRITICO' ('{0} unidade(s) de rede desconectada(s)' -f $mortos.Count) 'Mapeamento morto congela o Explorer e o "Salvar como" do Office por 30 segundos ou mais. O Modulo 3 remove.' 'Rede' 'Alto'
 }
 
-# =====================================================================
-# 6B. PERSISTENCIA - por que a estacao nao guarda ajuste no logoff
-#
-# Duas partes, de proposito. A primeira infere pelo estado do perfil e
-# responde na hora. A segunda deixa marcador e so conclui depois de um
-# logoff - e e ela que vale como prova, porque nao depende de palpite.
-# =====================================================================
 $script:MarcadorChaveReg = 'HKCU:\Software\KitSuporteRT'
 
 function Get-SessaoAtual {
-    # Identifica a sessao de logon de agora. Se o horario de inicio do
-    # explorer mudou entre duas execucoes, houve logoff ou reinicio.
+
     $boot = ''; $logon = ''
     try { $boot = '{0:yyyy-MM-dd HH:mm:ss}' -f (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime } catch { }
     try {
@@ -2353,9 +2135,7 @@ function Get-SessaoAtual {
 }
 
 function Get-LocaisMarcador {
-    # Cada local responde por uma pergunta diferente. O de disco so entra
-    # se a pasta clinica existir - sem ela nao da para separar perfil
-    # descartado de disco congelado.
+
     $lista = @(
         [pscustomobject]@{ Id='HKCU';    Rotulo='Registro do usuario (HKCU)'; Tipo='Reg'; Caminho=$script:MarcadorChaveReg; Prova='ajuste de registro do Modulo 3' }
         [pscustomobject]@{ Id='LOCAL';   Rotulo='AppData\Local do perfil';    Tipo='Arq'; Caminho=(Join-Path $env:LOCALAPPDATA 'KitSuporteRT\marcador.txt'); Prova='estado do Desfazer' }
@@ -2399,7 +2179,7 @@ function Write-Marcador {
 }
 
 function Get-DiagnosticoPerfil {
-    # Tudo aqui e leitura. Nenhum item exige administrador.
+
     $r = [pscustomobject]@{
         Caminho = "$env:USERPROFILE"; Tipo = 'Local'; Obrigatorio = $false; Temporario = $false
         Movel = $false; CaminhoMovel = ''; Filtro = ''; ApagaCache = $false; Motivos = @()
@@ -2407,8 +2187,6 @@ function Get-DiagnosticoPerfil {
     $sid = ''
     try { $sid = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value } catch { }
 
-    # Perfil obrigatorio: NTUSER.MAN no lugar do NTUSER.DAT. HKCU vira
-    # somente leitura e tudo o que o Modulo 3 ajusta morre no logoff.
     try {
         if (Test-Path -LiteralPath (Join-Path $env:USERPROFILE 'NTUSER.MAN')) {
             $r.Obrigatorio = $true; $r.Tipo = 'Obrigatorio'
@@ -2416,8 +2194,6 @@ function Get-DiagnosticoPerfil {
         }
     } catch { }
 
-    # Perfil temporario: o Windows carrega um perfil descartavel quando
-    # nao consegue abrir o do usuario. Sinal classico e a chave .bak.
     try {
         if ($sid) {
             $base = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'
@@ -2436,8 +2212,6 @@ function Get-DiagnosticoPerfil {
     } catch { }
     if ($r.Temporario) { $r.Tipo = 'Temporario' }
 
-    # Perfil movel: o que vale e a copia do servidor. Se ela nao salvar,
-    # ou se a politica apagar o cache local, tudo volta atras.
     try {
         $up = Get-CimInstance Win32_UserProfile -Filter "SID='$sid'" -ErrorAction SilentlyContinue
         if ($up) {
@@ -2460,8 +2234,6 @@ function Get-DiagnosticoPerfil {
         } catch { }
     }
 
-    # Filtro de escrita / congelador de disco: revertem no reinicio, nao
-    # no logoff. Separar isso e o que evita tratar a causa errada.
     try {
         foreach ($s in @('UWFServicingSvc','DFServ','FrzState2k','ShadowDefender')) {
             $x = Get-Service -Name $s -ErrorAction SilentlyContinue
@@ -2504,7 +2276,6 @@ function Invoke-DiagPersistencia {
         Add-Achado 'CRITICO' ('Filtro de escrita no disco: {0}' -f $d.Filtro) 'O disco volta ao estado anterior a cada reinicio. Nada instalado ou ajustado permanece. So o TI desliga - leve este log ao chamado.' 'Persistencia' 'Alto'
     }
 
-    # ---- a prova ----
     $sessao = Get-SessaoAtual
     $locais = Get-LocaisMarcador
     $anterior = ''
@@ -2556,24 +2327,8 @@ function Invoke-DiagPersistencia {
     if ($ok -lt $locais.Count) { Write-Log 'Algum lugar nem aceitou gravar agora - o que ja e resposta.' 'ALERTA' }
 }
 
-# =====================================================================
-# 4F. REGISTRO DO ECOSSISTEMA - so leitura, so relato
-#
-# <raiz>\RADIOTERAPIA_AI\_instalados.json e o registro compartilhado: cada
-# instalador do ecossistema grava a propria entrada. O kit LE e RELATA.
-# Nunca decide nada com base nele - nem o que proteger, nem o que limpar.
-#
-# Por que a fronteira importa: registro que mente e pior que registro vazio.
-# Vazio faz a pessoa ir olhar; errado faz ela concluir. Nesta maquina ele
-# declara AUTO_CONTORNO 2.1 em C:\RADIOTERAPIA_AI\AUTO_CONTORNO, pasta que nao
-# existe - o app mora em LOCAL_SUITE\_montagem\. Quem protege a carga em
-# execucao e a marca no caminho do processo (secao 2B das regras), que nao
-# depende deste arquivo estar em dia.
-# =====================================================================
 function Get-ArquivoRegistroEcossistema {
-    # Procura por MARCA em disco LOCAL, nunca por caminho fixo e nunca em
-    # unidade de rede: "if exist X:\" em letra mapeada morta custa o tempo
-    # limite do SMB, e isso ja travou o passo 3 da preparacao por 4 minutos.
+
     try {
         foreach ($d in (Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction Stop)) {
             $f = Join-Path ("$($d.DeviceID)\" + $script:MarcaEcossistema) '_instalados.json'
@@ -2584,8 +2339,7 @@ function Get-ArquivoRegistroEcossistema {
 }
 
 function Test-CaminhoLocalExiste {
-    # Caminho de rede nao e testado: servidor fora do ar devolveria o tempo
-    # limite do SMB em vez de resposta. Sem resposta e "nao sei", nao "nao existe".
+
     param([string]$Caminho)
     if (-not $Caminho) { return $null }
     if ($Caminho -like '\\*') { return $null }
@@ -2601,8 +2355,7 @@ function Get-AppsEcossistema {
     $txt = ''
     try { $txt = [System.IO.File]::ReadAllText($f, [System.Text.Encoding]::UTF8) } catch { $r.Estado = 'ilegivel'; return $r }
     if (-not "$txt".Trim()) { $r.Estado = 'vazio'; return $r }
-    # No 5.1, JSON vazio devolve nulo em silencio e JSON truncado lanca. Os dois
-    # tem de ser tratados, e nenhum pode virar caixa de erro na tela.
+
     $o = $null
     try { $o = $txt | ConvertFrom-Json -ErrorAction Stop } catch { $r.Estado = 'invalido'; return $r }
     if (-not $o) { $r.Estado = 'vazio'; return $r }
@@ -2621,9 +2374,6 @@ function Get-AppsEcossistema {
     $r.Estado = 'ok'
     $r.Apps = @($lista | Sort-Object Projeto)
 
-    # A mentira na direcao oposta: instalado no disco e ausente do registro.
-    # Pasta com entrega.txt e instalacao; sem ele e pasta de dado ou de apoio,
-    # e reportar essas geraria chamado para nao-problema.
     try {
         $raiz = Split-Path -Parent $f
         $nomes = @($r.Apps | Select-Object -ExpandProperty Projeto)
@@ -2721,7 +2471,6 @@ function Invoke-InventarioDiagnostico {
         try { & $e.Fn } catch { Write-Log ('Falha na etapa {0}: {1}' -f $e.Nome, $_.Exception.Message) 'ALERTA' }
     }
 
-    # ---------------- mapa dos pontos criticos ----------------
     Write-Titulo 'Mapa dos pontos criticos'
     $crit = @($script:Achados | Where-Object { $_.Severidade -eq 'CRITICO' })
     $alt  = @($script:Achados | Where-Object { $_.Severidade -eq 'ALERTA' })
@@ -2765,19 +2514,6 @@ function Invoke-InventarioDiagnostico {
     Save-Inventario
 }
 
-# =====================================================================
-# 6. MODULO 3 - LIMPEZA SEGURA
-# =====================================================================
-# Pastas de trabalho do ecossistema dentro do %TEMP%. O AUTO_CONTORNO cria o
-# staging com tempfile.mkdtemp usando estes prefixos, copia a serie do paciente
-# para la e o TotalSegmentator trabalha em cima - I/O pesado e continuo, por
-# horas. Prefixos observados: radai_, radai_lote_, radai_prev_, radai_portal_ e
-# ts_ (os tres do meio ja caem em radai_).
-#
-# O alvo TEMP do Modulo 3 nao tem filtro de idade e faz Remove-Item -Recurse
-# -Force em tudo que encontra, inclusive pasta criada segundos antes. Apagar
-# staging no meio de um lote nao da erro visivel: o cleaner anuncia os MB
-# liberados e o lote falha depois, por um motivo que nao parece limpeza.
 $script:PrefixosStagingEcossistema = @('radai_', 'ts_')
 
 function Test-StagingEcossistema {
@@ -2872,12 +2608,11 @@ function Get-AlvosLimpeza {
         "$lad\Adobe\Acrobat\DC\Cache", "$lad\Adobe\Acrobat\DC\ConnectorIcons", "$lad\Adobe\Color\ACEC")
     $al += New-Alvo -Id 'OFFICELOG' -Nome 'Logs e diagnosticos do Office' -Caminhos @(
         "$lad\Microsoft\Office\16.0\Telemetry", "$lad\Temp\Diagnostics", "$lad\Microsoft\Office\Logs")
-    # O cache do Citrix NUNCA e limpo por este kit (decisao do servico).
+
     $al += New-Alvo -Id 'CITRIXICA' -Nome ('Arquivos .ica soltos em Downloads (' + $txtPeriodo + ')') -Modo 'ArquivosRaiz' -DiasMin $dias -Caminhos @(
         "$up\Downloads") -Obs 'Apenas os lancadores baixados pelo navegador. O cache do Citrix nunca e tocado.'
     $al += New-Alvo -Id 'LIXEIRA' -Nome 'Lixeira' -Modo 'Lixeira' -Caminhos @()
 
-    # itens que dependem de decisao do usuario
     $al += New-Alvo -Id 'OFFICECACHE' -Nome 'Cache de documentos do Office' -Padrao $false -Fechar @('excel','winword','powerpnt','outlook') -Caminhos @(
         "$lad\Microsoft\Office\16.0\OfficeFileCache") -Obs 'Feche todo o Office antes. Alteracoes ainda nao enviadas podem se perder.'
     $al += New-Alvo -Id 'MINIATURAS' -Nome 'Cache de miniaturas e icones' -Modo 'ArquivosRaiz' -Caminhos @(
@@ -2950,7 +2685,7 @@ function Clear-Alvo {
             Clear-RecycleBin -Force -ErrorAction Stop
             return [pscustomobject]@{ Bytes = $antes; Itens = 1; Bloqueados = 0; Erro = $null }
         } catch {
-            # Lixeira ja vazia devolve um erro de token; nao e falha
+
             if ("$($_.Exception.Message)" -match 'token that does not exist|nao localizado|not exist|nao foi encontrado') {
                 return [pscustomobject]@{ Bytes = 0; Itens = 0; Bloqueados = 0; Erro = $null }
             }
@@ -2971,12 +2706,9 @@ function Clear-Alvo {
                 if ($Alvo.DiasMin -gt 0)       { $itens = @($itens | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$Alvo.DiasMin) }) }
             }
 
-            # Staging do ecossistema: fora, sempre. E a pasta raiz do staging nem
-            # muda de data enquanto o lote escreve no fundo dela, entao a guarda de
-            # frescor abaixo nao bastaria - por isso as duas.
             $antesFiltro = $itens.Count
             $itens = @($itens | Where-Object { -not (Test-StagingEcossistema $_.Name) })
-            # Mexido agora: nao se apaga o que esta sendo escrito neste instante.
+
             if ($Alvo.DiasMin -le 0) {
                 $itens = @($itens | Where-Object { $_.LastWriteTime -lt $corteFresco })
             }
@@ -3004,7 +2736,6 @@ function Clear-Alvo {
 function Get-PlanoLimpeza {
     $plano = New-Object System.Collections.ArrayList
 
-    # ---- 1. arquivos, caches e temporarios ----
     foreach ($a in (Get-AlvosLimpeza)) {
         if ($script:Cancelar) { break }
         if ($a.Modo -eq 'Lixeira') { continue }
@@ -3017,7 +2748,6 @@ function Get-PlanoLimpeza {
         })
     }
 
-    # ---- 2. lixeira (rotina) ----
     $lix = New-Alvo -Id 'LIXEIRA' -Nome 'Esvaziar a Lixeira' -Modo 'Lixeira' -Caminhos @()
     Set-Status 'Medindo a Lixeira...'
     $bl = Measure-Alvo -Alvo $lix
@@ -3026,7 +2756,6 @@ function Get-PlanoLimpeza {
         Marcar = $true; Dados = $lix; Nota = 'Feito antes dos Downloads, para que o que sair de la ainda possa ser recuperado.'
     })
 
-    # ---- 3. downloads ----
     $dl = Join-Path $env:USERPROFILE 'Downloads'
     if (Test-Path -LiteralPath $dl) {
         $dias = $script:DiasCorte
@@ -3044,7 +2773,6 @@ function Get-PlanoLimpeza {
         })
     }
 
-    # ---- 4. encerrar agora ----
     foreach ($e in (Get-ProcessosEncerraveis)) {
         [void]$plano.Add([pscustomobject]@{
             Grupo = 'FECHAR'; Rotulo = ('{0} ({1} processo(s))' -f $e.Rotulo, $e.Qtd); Valor = (Format-Bytes $e.Memoria); Bytes = 0
@@ -3052,7 +2780,6 @@ function Get-PlanoLimpeza {
         })
     }
 
-    # ---- 5. nao carregar na proxima inicializacao ----
     foreach ($i in (Get-ItensInicializacao)) {
         if ($i.Classe -eq 'Protegido') { continue }
         [void]$plano.Add([pscustomobject]@{
@@ -3062,7 +2789,6 @@ function Get-PlanoLimpeza {
         })
     }
 
-    # ---- 6. ajustes de desempenho ----
     foreach ($a in (Get-AjustesPendentes)) {
         [void]$plano.Add([pscustomobject]@{
             Grupo = 'AJUSTE'; Rotulo = $a.Rotulo; Valor = ''; Bytes = 0
@@ -3070,17 +2796,6 @@ function Get-PlanoLimpeza {
         })
     }
 
-    # ---- 7. mapeamento morto e credencial orfa: ACHADO, nao acao ----
-    #
-    # Os dois eram acao do kit e sairam. Motivo: 'net use /delete /y' e
-    # 'cmdkey /delete' nao voltam no logon e nao sao restaurados por
-    # Restore-Otimizacoes. Eram os dois unicos itens do plano nessa situacao.
-    #
-    # A deteccao fica - mapeamento morto e credencial orfa sao diagnostico util.
-    # O que muda e quem executa: o kit mostra o comando, a pessoa decide.
-    #
-    # Mesmo padrao que o projeto ja aplica ao que exige administrador: nao entra
-    # como acao, entra como achado.
     foreach ($m in (Get-MapeamentosMortos)) {
         Add-Achado 'ALERTA' ('Mapeamento de rede sem resposta: {0} aponta para {1}' -f $m.Letra, $m.Destino) `
             ('Para remover, rode no Prompt de Comando:  net use {0} /delete' -f $m.Letra) 'Rede' 'Baixo'
@@ -3092,7 +2807,6 @@ function Get-PlanoLimpeza {
 
     return $plano
 }
-
 
 function Invoke-Modulo3Analise {
     Clear-SnapshotsOperacao
@@ -3114,7 +2828,6 @@ function Invoke-Modulo3Analise {
         $script:ListaLimpeza.SetItemChecked($script:ListaLimpeza.Items.Count - 1, $p.Marcar)
     }
 
-    # resumo no log
     $bytes = ($plano | Where-Object { $_.Marcar -and $_.Grupo -match 'LIMPAR|LIXEIRA|BAIXADOS' } | Measure-Object Bytes -Sum).Sum
     $mem   = ($plano | Where-Object { $_.Marcar -and $_.Grupo -eq 'FECHAR' } | ForEach-Object { $_.Dados.Memoria } | Measure-Object -Sum).Sum
     $ini   = @($plano | Where-Object { $_.Marcar -and $_.Grupo -eq 'INICIAR' }).Count
@@ -3162,9 +2875,6 @@ function Invoke-Modulo3Limpeza {
     $nIni    = @($marcados | Where-Object { $_.Grupo -eq 'INICIAR' }).Count
     $nAju    = @($marcados | Where-Object { $_.Grupo -eq 'AJUSTE' }).Count
 
-    # O MOMENTO abre a caixa, quando nao e o certo. Vem antes da contagem: quem
-    # esta no meio do trabalho precisa ler isso primeiro, nao depois de quatro
-    # linhas de numero.
     $momento = Get-MomentoSessao
     $aviso = ''
     if ($momento.Veredicto -ne 'RECEM') {
@@ -3189,10 +2899,7 @@ function Invoke-Modulo3Limpeza {
         $msg += " · Encerrar {0} programa(s) dispensavel(is)`r`n" -f $nFechar
         $msg += " · Tirar {0} item(ns) da inicializacao`r`n" -f $nIni
         $msg += " · Aplicar {0} ajuste(s) de desempenho`r`n`r`n" -f $nAju
-        # A ordem real e LIXEIRA e depois BAIXADOS: a Lixeira e esvaziada PRIMEIRO,
-        # e o que sai de Downloads vai para ela depois. O texto anterior dizia o
-        # contrario - "vai para a Lixeira antes dela ser esvaziada" - e ainda
-        # afirmava que dava para recuperar, o que nao segue.
+
         $msg += "A Lixeira e esvaziada primeiro. O que sair de Downloads vai para ela depois, e continua recuperavel.`r`n"
         $msg += "Fora os arquivos apagados, nada aqui e definitivo: o botao Desfazer e o proximo logon devolvem o resto.`r`n`r`nContinuar?"
     }
@@ -3202,11 +2909,6 @@ function Invoke-Modulo3Limpeza {
         return
     }
 
-    # Instantaneo DEPOIS do 'Sim', nunca antes. A caixa de confirmacao espera o
-    # usuario por tempo indefinido, e e tempo em que ele pode alternar para o
-    # Local Suite e disparar um lote - que e o motivo de otimizar a sessao. Um
-    # retrato tirado antes do dialogo chegaria ao executor com a idade da
-    # hesitacao do usuario, e nada aqui mede essa idade.
     Clear-SnapshotsOperacao
     [void](Get-EmUsoOperacao -Renovar)
 
@@ -3223,16 +2925,7 @@ $script:LogonSegundos      = 0
     $n = 0
 
     try {
-        # ordem: fechar (libera arquivos travados) -> limpar -> lixeira -> downloads -> inicializacao -> ajustes -> rede
-        # Ordem de execucao. TODO grupo daqui reverte: no logon (SESSAO, TAREFA,
-        # FECHAR, PRIORIDADE, MEMORIA), pelo botao Desfazer (INICIAR, AJUSTE), ou
-        # pela Lixeira (BAIXADOS). LIMPAR e LIXEIRA apagam - sao a limpeza, e
-        # LIXEIRA e o unico ponto sem volta do kit.
-        #
-        # REDE e CREDENC estavam aqui e sairam: 'net use /delete' e 'cmdkey
-        # /delete' nao voltam de forma nenhuma. Viraram achado.
-        #
-        # Grupo novo aqui precisa de caminho de volta. A suite confere.
+
         $ordem = @('SESSAO', 'TAREFA', 'FECHAR', 'LIMPAR', 'LIXEIRA', 'BAIXADOS', 'INICIAR', 'AJUSTE', 'PRIORIDADE', 'MEMORIA')
         foreach ($g in $ordem) {
             $doGrupo = @($marcados | Where-Object { $_.Grupo -eq $g })
@@ -3370,7 +3063,6 @@ $script:LogonSegundos      = 0
             Save-Estado 'inicializacao_desativada' ($atual + $desativados)
         }
 
-        # ---------------- relatorio ----------------
         Write-Titulo 'Resultado'
         if ($script:ModoPlano -eq 'SESSAO') {
             Write-Log ('Memoria devolvida ............. {0}' -f (Format-Bytes $memoria)) 'OK'
@@ -3434,18 +3126,11 @@ $script:LogonSegundos      = 0
     }
 }
 
-# =====================================================================
-# 7. ACOES RAPIDAS
-# =====================================================================
-
-
-
 function Restart-Computador {
     $msg = "O computador sera reiniciado agora.`r`n`r`nSalve os arquivos abertos antes de continuar.`r`n`r`nReiniciar (e nao Desligar) e o que realmente limpa a memoria.`r`n`r`nConfirmar?"
     if ([System.Windows.Forms.MessageBox]::Show($msg, 'Reiniciar o computador', 'YesNo', 'Warning') -eq 'Yes') {
         Write-Log 'Reiniciando o computador...' 'ALERTA'
-        # shutdown e programa externo: se a politica da estacao negar o privilegio de
-        # desligamento, ele falha em silencio e o aviso abaixo seria mentira.
+
         $saidaSd = (& shutdown /r /t 10 /c "Reinicio solicitado pelo Kit de Suporte" 2>&1 | Out-String).Trim()
         if ($LASTEXITCODE -eq 0) {
             Write-Log 'Reinicio agendado para 10 segundos. Use shutdown /a para cancelar.' 'DADO'
@@ -3457,9 +3142,6 @@ function Restart-Computador {
     }
 }
 
-# =====================================================================
-# 7B. ESTADO PERSISTENTE (para desfazer otimizacoes)
-# =====================================================================
 $script:PastaEstado = Join-Path $env:LOCALAPPDATA 'KitSuporteRT'
 
 function Get-ArquivoEstado {
@@ -3492,9 +3174,6 @@ function Save-Estado {
     Write-Estado $e
 }
 
-# =====================================================================
-# 7C. DIALOGOS AUXILIARES
-# =====================================================================
 function Show-Escolha {
     param([string]$Titulo, [string]$Mensagem, [string[]]$Opcoes)
     $f = New-Object System.Windows.Forms.Form
@@ -3502,7 +3181,7 @@ function Show-Escolha {
     $f.MaximizeBox = $false; $f.MinimizeBox = $false
     $f.BackColor = $script:Cor.Painel; $f.ForeColor = $script:Cor.Texto
     $f.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-    # a altura da mensagem e medida, nao chutada: texto longo nao fica cortado
+
     $fonteMsg = New-Object System.Drawing.Font('Segoe UI', 9)
     $alturaMsg = 40
     try {
@@ -3539,26 +3218,6 @@ function Show-Escolha {
     return $script:EscolhaResultado
 }
 
-
-# =====================================================================
-# 7D. GRUPO A - ROTINAS CRITICAS DE IDENTIFICACAO
-# =====================================================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-# C11 ----------------------------------------------------------------
-
-# C12 ----------------------------------------------------------------
 function Invoke-DiagDownloads {
     Write-Titulo 'Pasta Downloads'
     $dl = Join-Path $env:USERPROFILE 'Downloads'
@@ -3595,8 +3254,6 @@ function Invoke-DiagDownloads {
     } catch { }
 }
 
-
-# C14 ----------------------------------------------------------------
 function Invoke-DiagNuvem {
     Write-Titulo 'OneDrive e Teams'
 
@@ -3640,13 +3297,6 @@ function Invoke-DiagNuvem {
     }
 }
 
-
-# =====================================================================
-# 7G. GRUPO D - ACOES QUE MUDAM A VELOCIDADE
-# =====================================================================
-
-# D16 ----------------------------------------------------------------
-
 function Disable-ItemInicializacao {
     param([string]$Nome, [ValidateSet('Run','StartupFolder')][string]$Tipo = 'Run')
     $chave = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\' + $Tipo
@@ -3669,11 +3319,6 @@ function Enable-ItemInicializacao {
     } catch { return $false }
 }
 
-
-
-
-
-# Desfazer -----------------------------------------------------------
 function Restore-Otimizacoes {
     Write-Titulo 'Desfazer otimizacoes'
     $e = Read-Estado
@@ -3728,7 +3373,6 @@ function Restore-Otimizacoes {
     Remove-Item -LiteralPath (Get-ArquivoEstado) -Force -ErrorAction SilentlyContinue
     Write-Log 'Tudo restaurado. Faca logoff para aplicar por completo.' 'OK'
 }
-
 
 function Set-AjusteRegistro {
     param([string]$Grupo, [array]$Ajustes)
@@ -3827,9 +3471,6 @@ function Set-AjusteStorageSense {
     )
 }
 
-# =====================================================================
-# 7H. MODULO 5 - ARQUIVOS E PASTAS GRANDES
-# =====================================================================
 function Get-VeredictoPasta {
     param([string]$Caminho)
     if (Test-DentroDaPasta -Caminho $Caminho -Pasta $script:PastaClinica)        { return @{ V = 'NAO APAGAR'; M = 'Pasta clinica. Nunca apague.' } }
@@ -3847,7 +3488,7 @@ function Get-VeredictoPasta {
 
 function Get-CandidatosPastas {
     $lista = @()
-    # somente o disco do sistema: e o unico cujo espaco livre afeta o desempenho
+
     $raizes = @($env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA, $script:PastaClinica, 'C:\')
     foreach ($r in $raizes) {
         if (-not (Test-Path -LiteralPath $r)) { continue }
@@ -3867,7 +3508,6 @@ function Invoke-ArquivosGrandes {
     Write-Log 'So o disco C:. E o unico cujo espaco livre afeta o desempenho do Windows.' 'DADO'
     Write-Log 'Pastas do Windows e Program Files ficam de fora: nao ha o que fazer nelas sem administrador.' 'DADO'
 
-    # a paginacao pode morar em outro disco - se aquele disco encher, ai sim pesa
     try {
         foreach ($pf in (Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue)) {
             $letra = ($pf.Name.Substring(0, 2)).ToUpper()
@@ -3894,7 +3534,6 @@ $script:LogonSegundos      = 0
 $script:StatusSessao       = $null
     $script:ListaGrandes.Items.Clear()
 
-    # ---------------- 10 maiores arquivos ----------------
     Set-Status 'Procurando arquivos grandes...'
     $raizesArq = @($env:USERPROFILE, $script:PastaClinica, 'C:\Temp', 'C:\Users\Public') |
                  Where-Object { Test-Path -LiteralPath $_ } | Select-Object -Unique
@@ -3927,7 +3566,6 @@ $script:StatusSessao       = $null
         Add-ItemInv 'Arquivo grande' $f.Name (Format-Bytes $f.Length) ($ver + ' - ' + $f.FullName)
     }
 
-    # ---------------- 10 maiores pastas ----------------
     Write-Log '' 'DADO'
     Write-Log 'OS 10 MAIORES DIRETORIOS' 'TITULO'
     $cands = Get-CandidatosPastas
@@ -3991,20 +3629,6 @@ function Open-ItemGrande {
     }
 }
 
-
-
-# =====================================================================
-# 7J. MODULO 7 - OTIMIZAR A SESSAO ATUAL
-# ---------------------------------------------------------------------
-# Tudo aqui vale so para a sessao de agora. O proximo logon devolve o
-# estado normal da maquina: nada e desinstalado nem desativado.
-# Navegador do prontuario, navegador web e Citrix sao sempre preservados.
-# =====================================================================
-
-# Processos que sustentam a area clinica: nunca sao encerrados nem rebaixados.
-# Audio, microfone e utilitarios de periferico: encerrados na sessao mesmo estando
-# na lista geral de protegidos. O som continua funcionando - o driver e o servico de
-# audio do Windows rodam como SISTEMA. Sai apenas a camada de realce e os icones.
 $script:SessaoAudio = 'RAVBg|RAVCpl|RtkNGUI|RtkAudUService|RtHDVBg|RtHDVCpl|RtlUpd|RealtekAudio' +
     '|WavesSvc|WavesSysSvc|WavesAudio|MaxxAudio' +
     '|Nahimic|A-Volute|AudioCenter' +
@@ -4013,15 +3637,12 @@ $script:SessaoAudio = 'RAVBg|RAVCpl|RtkNGUI|RtkAudUService|RtHDVBg|RtHDVCpl|RtlU
     '|WebcamService|CameraHelper|YourPhoneCamera' +
     '|fsquirt|BTTray|BTStackServer|BluetoothUserService|IntelBluetooth|btplayerctrl|BluetoothHeadset|BtwRSupportService'
 
-# Enfeites do Windows: widget, barra de pesquisa, area de trabalho virtual,
-# hub de comentarios e avisos de atualizacao. Todos voltam sozinhos ou no logon.
 $script:SessaoEnfeites = 'Widgets|WidgetService|SearchHost|SearchApp|SearchUI' +
     '|StartMenuExperienceHost|ShellExperienceHost|ShellHost|TaskViewHost|MultitaskingViewHost|TextInputHost' +
     '|FeedbackHub|PilotshubApp|GetHelp|Windows\.Feedback' +
     '|jusched|jucheck|JavaUpdate|JavaCheck|OneDriveStandaloneUpdater|GoogleUpdate|MicrosoftEdgeUpdate|EdgeUpdate' +
     '|SCNotification|UserOOBEBroker|CompPkgSrv|WindowsInternal|LockApp|SystemSettingsBroker'
 
-# Acesso remoto: e por aqui que o TI entra na maquina. Nunca encerrado.
 $script:SessaoRemoto = 'TeamViewer|tv_w32|tv_x64|uvnc|winvnc|vncserver|tvnserver|ScreenConnect|AnyDesk|RustDesk' +
     '|CmRcService|CmRcViewer|RcAgent|DameWare|BeyondTrust|bomgar|LogMeIn|LMIGuardian|Splashtop|ZohoAssist' +
     '|quickassist|^msra$|^mstsc$|RdpClip|rdpinit'
@@ -4032,34 +3653,13 @@ $script:SessaoPreservar = 'wfica32|wfcrun32|CDViewer|SelfService|Receiver|concen
     '|WindowsTerminal|OpenConsole|FortiTray|FortiClient|FortiSSLVPN|Forti' +
     '|EXCEL|WINWORD|POWERPNT|OUTLOOK|MSACCESS|^olk$|onenote|StickyNot' +
     '|javaw|^java$|jp2launcher|Wheb|tasy' +
-    # Prontuario eletronico com presenca mundial. Tasy e o da Philips usado no
-    # Brasil e estava sozinho aqui; num parque fora dele o prontuario tem outro
-    # nome, e prontuario encerrado no meio de um atendimento e o mesmo estrago
-    # com qualquer marca.
-    #
-    # 'Epic' era o caso grave: o token 'Epic' da lista de CONHECIDOS existe para
-    # o lancador de jogo, e casava Epic Systems. Medido, com janela aberta e
-    # 800 MB: vinha PRE-MARCADO, com a nota 'programa conhecido e nao guarda
-    # documento' - falsa nas duas afirmacoes para um prontuario.
+
     '|^Epic$|EpicSystems|Hyperspace|PowerChart|Cerner|MEDITECH|Soarian|Sectra' +
     '|Vitrea|Vsp|^VI\.|Mirada|Medis|4DM|Corridor|NeuroQ|Olea|TomTec|ARIA|Eclipse|Varian|MOSAIQ|Monaco|MIM|RayStation|Velocity|Onis|Digitalcore|dicom|PACS' +
     '|sqlservr|Tomcat|catalina|w3wp|inetinfo|MSMQ|postgres|mysqld|oracle|firebird' +
     '|^claude$|^claude-code$' +
     '|' + $script:SessaoRemoto
 
-# Programas que ficam abertos mas nao devem ter a memoria compactada:
-# sessao publicada do Citrix, aplicativo clinico de imagem, banco local e acesso remoto.
-# APPS DE TRABALHO: o programa que a pessoa veio usar na maquina.
-#
-# NAO e lista de protecao - essa pergunta e outra, e $script:SessaoPreservar
-# responde. Esta responde "a pessoa JA COMECOU o trabalho do dia?", e serve a
-# Get-MomentoSessao. Os nomes se repetem entre as duas por coincidencia de
-# assunto, nao por duplicacao: se um app clinico sair desta, o kit deixa de
-# avisar que o trabalho comecou, mas continua sem encerrar o app.
-#
-# Citrix entra por wfica32 e wfcrun32, que sao a JANELA da sessao publicada -
-# nao por concentr nem SelfService, que sao bandeja e sobem no logon sem
-# ninguem pedir.
 $script:AppsDeTrabalho =
     'ARIA|Eclipse|Varian|MOSAIQ|IMPAC|Monaco|Focal|RayStation|RayCare|MIM|Velocity' +
     '|Pinnacle|Oncentra|XiO|iPlan|Brainlab|Precision|TomoTherapy|Limbus|AutoContour' +
@@ -4070,71 +3670,18 @@ $script:AppsDeTrabalho =
 
 $script:SessaoNaoCompactar = '^claude$|^claude-code$|^python$|^pythonw$|wfica32|wfcrun32|CDViewer|concentr|Vitrea|Vsp|^VI\.|Mirada|Medis|4DM|Corridor|NeuroQ|Olea|TomTec|ARIA|Eclipse|Varian|MOSAIQ|Monaco|MIM|RayStation|Onis|Digitalcore|sqlservr|Tomcat|w3wp|' + $script:SessaoRemoto
 
-# ---------------------------------------------------------------------
-# INSTANTANEO DE PROCESSOS  -  uma consulta por operacao, nao por uso
-#
-# Medido nesta maquina, 318 processos, PowerShell 5.1:
-#     Get-CimInstance Win32_Process (todos os campos) ... 641 ms
-#     Get-CimInstance Win32_Process (os 4 que uso) ..... 367 ms
-#     Get-Process ....................................... 28 ms
-#
-# O Modulo 5 repetia essa consulta em sete lugares, e o executor a fazia UMA
-# VEZ POR PID atraves de Get-AppEmUso.
-#
-# CRONOMETRADO de ponta a ponta, 60 PIDs, e o numero depende de o Local Suite
-# estar aberto - porque Get-AppEmUso sai no Test-Path quando nao ha em_uso.json,
-# e so paga o CIM quando ha:
-#
-#                                        ANTES      DEPOIS
-#     com em_uso.json (Local Suite)      16,7 s      ~2 s     <- o caso que importa
-#     sem em_uso.json                     1,6 s      ~1,3 s
-#
-#   Por PID: Get-AppEmUso completo sem instantaneo 278 ms; com o instantaneo
-#   pronto 25 ms; no modo -Rapido 9 ms.
-#
-# A primeira versao deste comentario dizia "45,6 s -> 0,37 s, 124x". Era
-# projecao a partir do custo unitario do CIM, nao medicao: supunha que todo
-# Get-AppEmUso pagasse a consulta, o que nao acontece com o arquivo ausente.
-# Fica registrado porque o erro e instrutivo - extrapolar custo unitario para
-# custo total inventou uma ordem de grandeza.
-#
-# POR QUE O INSTANTANEO TEM PRAZO. Decidir encerrar processo numa estacao
-# clinica com dado velho e inaceitavel: um PID reciclado passaria a ser visto
-# com o caminho do ocupante ANTERIOR, e um processo clinico nascido depois do
-# instantaneo perderia a protecao por caminho. Por isso:
-#   - o instantaneo vale dentro de UMA operacao e e descartado no inicio da
-#     seguinte, nunca reaproveitado entre cliques;
-#   - o EXECUTOR nao confia nele para decidir: relê o caminho ao vivo do
-#     processo que esta a ponto de encerrar (1,7 ms cada, 100 ms para 60);
-#   - a sinalizacao em_uso.json e relida do disco antes de cada encerramento,
-#     que custa 9 ms medidos, e so a caminhada de descendencia usa o
-#     instantaneo.
-# ---------------------------------------------------------------------
 $script:SnapProc = $null
 
 function Get-SnapshotSvc {
-    # Medido nesta maquina: Win32_Service completo 1.465 ms, com 3 campos 938 ms,
-    # Get-Service 166 ms. Para casar NOME e ESTADO - que e tudo o que o papel de
-    # servidor e o Bluetooth precisam - Get-Service basta e e 9x mais rapido.
-    # Projetado para o mesmo formato, com State em vez de Status, para que quem
-    # consome nao precise saber de onde veio.
-    #
-    # O inventario do Modulo 2 segue usando Win32_Service: ele precisa de
-    # StartMode e StartName, que Get-Service nao da no PowerShell 5.1.
+
     if ($script:SnapSvc -and $script:SnapSvc.Count -gt 0) { return $script:SnapSvc }
 
-    # SilentlyContinue, nao Stop. Get-Service tropeca em servico individual que
-    # o usuario nao pode consultar; com -ErrorAction Stop esse tropeco virava
-    # terminante, o catch engolia e a lista saia VAZIA. E lista vazia aqui nao
-    # parece erro: parece "esta maquina nao hospeda servico nenhum", e o aviso
-    # CRITICO de papel de servidor desaparecia calado. Com SilentlyContinue vem
-    # o que deu para ler, que e o comportamento certo para um diagnostico.
     $script:SnapSvc = @(Get-Service -ErrorAction SilentlyContinue | ForEach-Object {
         [pscustomobject]@{ Name = $_.Name; DisplayName = $_.DisplayName; State = "$($_.Status)" }
     })
 
     if ($script:SnapSvc.Count -eq 0) {
-        # segunda tentativa por outro caminho, porque zero servico nao existe
+
         try {
             $script:SnapSvc = @(Get-CimInstance Win32_Service -Property Name,DisplayName,State -ErrorAction Stop | ForEach-Object {
                 [pscustomobject]@{ Name = $_.Name; DisplayName = $_.DisplayName; State = "$($_.State)" }
@@ -4142,17 +3689,14 @@ function Get-SnapshotSvc {
         } catch { }
     }
     if ($script:SnapSvc.Count -eq 0) {
-        # Nao cacheia o fracasso e NAO o deixa passar por resposta. Uma maquina
-        # sem nenhum servico nao existe; se a lista veio vazia, foi a leitura
-        # que falhou, e quem le o log precisa saber que aquela verificacao nao
-        # aconteceu - em vez de concluir que deu tudo certo.
+
         Write-Log 'Nao foi possivel ler a lista de servicos desta maquina: a verificacao de papel de servidor NAO foi feita.' 'ALERTA'
     }
     return $script:SnapSvc
 }
 
 function Clear-SnapshotsOperacao {
-    # Chamado no inicio de cada modulo. O instantaneo vale para UMA operacao.
+
     $script:SnapProc         = $null
     $script:SnapSvc          = $null
     $script:EmUsoOperacao    = $null
@@ -4165,22 +3709,7 @@ function Clear-SnapshotsOperacao {
 function Clear-SnapshotProc { $script:SnapProc = $null }
 
 function Get-EmUsoOperacao {
-    # O conjunto de PIDs que o Local Suite protege AGORA. Junta duas leituras que
-    # sozinhas deixam buraco:
-    #
-    #   -Rapido  le so o arquivo, 9 ms. Traz PID que o Local Suite acabou de
-    #            listar, e NAO traz descendencia.
-    #   completo caminha a descendencia, 278 ms. Traz o worker que nasceu de um
-    #            PID listado, e nao sabe do que entrou na lista depois.
-    #
-    # O codigo anterior escolhia um OU outro por "if Protegidos.Count -eq 0",
-    # o que trocava o rapido pelo completo exatamente quando o arquivo estava
-    # vazio - isto e, quando nao havia nada a proteger. No caso que importa, com
-    # o arquivo cheio, a descendencia era simplesmente descartada.
-    #
-    # Agora e uniao, e a descendencia tem prazo em vez de ser calculada uma vez
-    # no inicio: o TotalSegmentator cria worker o tempo todo, e um Aplicar leva
-    # minutos. Renovar custa 278 ms a cada 15 s de lote.
+
     param([switch]$Renovar)
     $agora = Get-Date
     $venceu = $Renovar -or (-not $script:EmUsoOperacao) -or (-not $script:EmUsoOperacaoEm) -or
@@ -4195,9 +3724,7 @@ function Get-EmUsoOperacao {
     foreach ($id in $r.Protegidos) { $set[[int]$id] = $true }
     if ($script:EmUsoOperacao -and $script:EmUsoOperacao.Fresco) {
         foreach ($id in $script:EmUsoOperacao.Protegidos) { $set[[int]$id] = $true }
-        # Fresco da uniao: se qualquer das duas leituras esta fresca, a protecao
-        # vale. Test-PodeEncerrarSessao so olha Protegidos quando Fresco e certo,
-        # entao perder este sinalizador anularia a uniao inteira em silencio.
+
         $r.Fresco = $true
     }
     $r.Protegidos = @($set.Keys)
@@ -4205,16 +3732,7 @@ function Get-EmUsoOperacao {
 }
 
 function Get-CaminhoAoVivo {
-    # O caminho de UM processo, para quem vai decidir algo sobre ele.
-    #
-    # Ao vivo primeiro, instantaneo como reforco - nunca o contrario. Processo
-    # nascido depois do retrato nao esta no mapa, e e exatamente o caso que
-    # importa: a inferencia que o lote do Local Suite acabou de abrir. Buscando
-    # so no mapa, ela vinha com caminho vazio, Test-CaminhoEcossistema
-    # respondia 'nao sei' e a protecao por marca simplesmente nao acontecia.
-    #
-    # O mapa continua servindo para o contrario: processo cujo .Path nao abre,
-    # onde o CIM deu o caminho e o .NET nao da.
+
     param($Processo, $Mapa)
     $cam = try { [string]$Processo.Path } catch { '' }
     if (-not $cam -and $Mapa) { $cam = [string]$Mapa[[int]$Processo.Id] }
@@ -4222,16 +3740,7 @@ function Get-CaminhoAoVivo {
 }
 
 function Get-SnapshotProc {
-    # Devolve @{ Caminhos = @{pid->caminho}; Pais = @{pid->pidPai}; Vivos = @{pid} }
-    #
-    # O cache TEM PRAZO. A guarda anterior era só "if ($script:SnapProc)", e um
-    # pscustomobject vazio e verdadeiro em PowerShell: consulta que falhasse
-    # ficava guardada para a operacao inteira, com Vivos e Caminhos vazios, o que
-    # desligava em silencio a caminhada de descendencia. O cache existe para nao
-    # repetir trabalho BOM, nao para congelar trabalho que nao aconteceu.
-    # A guarda confere o CONTEUDO, nao so a existencia: instantaneo sem nenhum
-    # processo vivo nao e resposta, e a leitura nao deve ter de confiar em que
-    # todo escritor respeitou a regra. Os dois lados guardam a mesma invariante.
+
     if ($script:SnapProc -and $script:SnapProcEm -and $script:SnapProc.Vivos.Count -gt 0 -and
         ((Get-Date) - $script:SnapProcEm).TotalSeconds -le $script:SnapMaxSeg) {
         return $script:SnapProc
@@ -4245,8 +3754,7 @@ function Get-SnapshotProc {
             if ($proc.ExecutablePath) { $snap.Caminhos[$id] = "$($proc.ExecutablePath)" }
         }
     } catch { }
-    # So guarda o que veio de fato. Vazio significa que a consulta nao respondeu,
-    # e a proxima chamada tem de tentar de novo em vez de herdar o vazio.
+
     if ($snap.Vivos.Count -gt 0) {
         $script:SnapProc   = $snap
         $script:SnapProcEm = Get-Date
@@ -4255,16 +3763,12 @@ function Get-SnapshotProc {
 }
 
 function Get-CaminhosProcesso {
-    # Mantida pelo nome, agora servida pelo instantaneo. Processo sem caminho e
-    # nucleo do Windows, ja protegido por nome: ausencia nao abre brecha, e
-    # Test-CaminhoEcossistema trata ausencia como 'nao sei'.
+
     return (Get-SnapshotProc).Caminhos
 }
 
 function Get-SufixosDns {
-    # Os sufixos de DNS que valem NESTA maquina, descobertos em tempo de execucao,
-    # mais o que estiver configurado. Nunca um dominio de terceiro chumbado: numa
-    # rede que nao e aquela a consulta sempre falha, e o nome sai no ar.
+
     $l = @()
     try { $l += [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().DomainName } catch { }
     if ($env:USERDNSDOMAIN) { $l += $env:USERDNSDOMAIN }
@@ -4278,20 +3782,7 @@ function Get-SufixosDns {
 }
 
 function Test-DentroDaPasta {
-    # $Caminho esta DENTRO de $Pasta (ou e ela mesma)?
-    #
-    # Duas regras, e as duas ja custaram defeito neste projeto:
-    #
-    # 1. PASTA VAZIA RESPONDE FALSO. Nao ha pasta configurada, entao nao ha o que
-    #    dizer. A versao anterior montava o curinga com a variavel dentro - com
-    #    ela vazia, '-like (''*'' + '''' + ''*'')' vira '-like ''**''' e casa com
-    #    TODO caminho. Medido: todo arquivo grande saia com veredicto MANTER e
-    #    toda pasta com NAO APAGAR, com o motivo 'Esta na pasta clinica' - que e
-    #    falso - e sem uma linha de erro.
-    #
-    # 2. COMPARA POR COMPONENTE, nao por prefixo de texto. 'C:\PASTA' como
-    #    prefixo tambem casa 'C:\PASTA_ANTIGA'. Mesma familia do nome de regex
-    #    sem ancora que casa demais, e mesma solucao de Test-CaminhoEcossistema.
+
     param([string]$Caminho, [string]$Pasta)
     if (-not "$Pasta".Trim() -or -not "$Caminho".Trim()) { return $false }
     $sep = [char]92
@@ -4305,25 +3796,7 @@ function Test-DentroDaPasta {
 }
 
 function Test-Padrao {
-    # O texto casa o padrao? Comparacao INDEPENDENTE DE CULTURA, de proposito.
-    #
-    # -match herda IgnoreCase da cultura da THREAD, e em turco e azeri o 'I'
-    # maiusculo baixa para 'i' sem ponto (U+0131), que nao e o 'i' do padrao.
-    # Medido em PowerShell 5.1: sob tr-TR, 'CITRIX' -match 'wfica32|Citrix|tasy'
-    # devolve False, e 'WFICA32' tambem. Nome sem i passa; nome com i em caixa
-    # diferente da entrada da lista, nao.
-    #
-    # A direcao da falha e a pior possivel - a linha do executor e
-    # 'if ($nome -match $protegidos) { continue }', entao match falho significa
-    # NAO pula, ENCERRA. Protecao que desaparece em silencio numa maquina que
-    # ninguem desta casa vai testar.
-    #
-    # Nao depende de o kit oferecer turco: uma estacao turca quebra o aplicativo
-    # de hoje, em portugues, sem ninguem ter escolhido nada.
-    #
-    # Padrao vazio devolve FALSO. '' casaria com tudo em -match, e numa lista de
-    # protecao isso viraria 'protege tudo' - inofensivo, mas mascara o fato de a
-    # lista nao ter carregado. Ver a guarda de listas em tools\Testar-Sessao.ps1.
+
     param([string]$Texto, [string]$Padrao)
     if (-not $Texto -or -not $Padrao) { return $false }
     try {
@@ -4333,60 +3806,18 @@ function Test-Padrao {
 }
 
 function Test-CaminhoEcossistema {
-    # Carga do proprio ecossistema: inferencia do AUTO_CONTORNO, vigia, CADS.
-    # Compara COMPONENTE DE PASTA, nao prefixo: acha C:\RADIOTERAPIA_AI\... e
-    # D:\RADIOTERAPIA_AI\LOCAL_SUITE\... sem precisar saber a raiz de antemao.
+
     param([string]$Caminho)
-    if (-not $Caminho) { return $false }   # sem caminho = nao sei, nao 'nao e nosso'
-    # Split por CODIGO de caractere, nao por classe de regex. Escapar barra
-    # invertida atravessa varias camadas de ferramenta e uma delas come o
-    # escape: a primeira versao desta linha virou '[\/]' e passou a casar so
-    # barra normal, entao nenhum caminho do Windows era reconhecido. O teste
-    # pegou; sem ele teria virado protecao que nao protege.
+    if (-not $Caminho) { return $false }
+
     return ($Caminho.Split([char]92, [char]47) -contains $script:MarcaEcossistema)
 }
 
-# =====================================================================
-# 4G. SINALIZACAO DE APP EM USO  -  acordo com o Radioterapia.AI Local Suite
-#
-# O Local Suite grava, enquanto o vigia ou um lote estiver vivo:
-#     %LOCALAPPDATA%\RADIOTERAPIA_AI\em_uso.json
-#     {"versao":1,"app":"...","atualizado":"<ISO-8601>","pids":[...],
-#      "porta":8777,"segmentando":true}
-# renovado a cada ~60 s e apagado na saida limpa.
-#
-# POR QUE ISSO EXISTE, e a marca de caminho nao resolve: o cmd.exe que abre o
-# vigia mora em C:\Windows\System32 e o navegador tambem. Nenhuma marca de
-# arvore instalada alcanca os dois, e fechar qualquer um deles derruba o app no
-# meio de uma segmentacao.
-#
-# INVARIANTE: este arquivo so sabe ACRESCENTAR protecao. Nenhum caminho aqui
-# devolve "pode encerrar". Arquivo malformado, velho ou adulterado deixa o kit
-# conservador demais - nunca permissivo. Ele vive em %LOCALAPPDATA%, onde o
-# usuario ja pode tudo, entao nao abre superficie nova.
-#
-# CARIMBO ILEGIVEL conta como FRESCO, de proposito. Ignorar arriscaria matar um
-# lote; honrar arriscaria protecao eterna por um arquivo esquecido. A saida nao e
-# escolher um dos dois: e VISIBILIDADE. O Modulo 5 sempre imprime quantos
-# processos o arquivo protegeu e de quando ele e, entao sobreprotecao aparece na
-# tela em vez de virar "o kit nao libera mais memoria e nao diz por que".
-#
-# PID RECICLADO e limitacao conhecida: em 5 minutos o Windows pode reusar um PID
-# e eu protegeria um processo alheio. A consequencia e sobreprotecao, que e a
-# direcao segura, e o aviso na tela a torna visivel.
-# =====================================================================
 $script:ArquivoEmUso = Join-Path $env:LOCALAPPDATA (Join-Path $script:MarcaEcossistema 'em_uso.json')
 $script:EmUsoMaxMin  = 5
 
 function Get-AppEmUso {
-    # Devolve sempre um objeto; nunca lanca. Apps = vazio significa "sem
-    # protecao extra", e e o estado normal de quem nao tem o Local Suite aberto.
-    #
-    # -Rapido le SO o arquivo, sem a caminhada de descendencia: 9 ms medidos,
-    # contra 278 ms do modo completo sem instantaneo e 25 ms com ele. O
-    # executor usa o modo rapido antes de cada encerramento, para que
-    # um PID recem-listado pelo Local Suite seja respeitado mesmo no meio de um
-    # Aplicar longo. A descendencia vem do conjunto completo, calculado uma vez.
+
     param([switch]$Rapido)
     $r = [pscustomobject]@{
         Existe = $false; Fresco = $false; Idade = $null; CarimboLegivel = $true
@@ -4406,7 +3837,6 @@ function Get-AppEmUso {
         $r.Segmentando = ($o.segmentando -eq $true)
         $r.Pids        = @(@($o.pids) | ForEach-Object { try { [int]$_ } catch { } } | Where-Object { $_ -gt 0 })
 
-        # carimbo: ilegivel conta como fresco, e fica registrado que era ilegivel
         $quando = $null
         try { $quando = [datetime]::Parse("$($o.atualizado)", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind) } catch { }
         if ($null -eq $quando) { try { $quando = [datetime]"$($o.atualizado)" } catch { } }
@@ -4420,21 +3850,13 @@ function Get-AppEmUso {
         if (-not $r.Fresco) { return $r }
         if ($Rapido) { $r.Protegidos = @($r.Pids); return $r }
 
-        # PIDs listados que estao vivos, mais toda a descendencia deles: o
-        # TotalSegmentator cria worker o tempo todo, e worker nasce entre duas
-        # renovacoes do arquivo.
         $snap = Get-SnapshotProc
         $pai = $snap.Pais
         $vivos = $snap.Vivos
         $set = @{}
-        # Todo PID listado entra, esteja ou nao no instantaneo. O filtro por
-        # vivos que havia aqui errava a direcao: proteger PID que ja morreu nao
-        # custa nada - nao ha o que encerrar -, mas descartar PID vivo porque o
-        # retrato envelheceu tira a protecao de carga clinica. Numa lista de
-        # protecao, a duvida se resolve protegendo.
+
         foreach ($id in $r.Pids) { $set[$id] = $true }
-        # sobe a cadeia de pais de cada processo vivo: se encontrar um PID
-        # protegido, o descendente tambem entra. Corta em 40 niveis por seguranca.
+
         foreach ($id in $vivos.Keys) {
             if ($set.ContainsKey($id)) { continue }
             $atual = $id; $n = 0
@@ -4452,8 +3874,7 @@ function Get-AppEmUso {
 }
 
 function Write-LogEmUso {
-    # Chamado pelo Modulo 5 SEMPRE que ha protecao por arquivo, para que
-    # sobreprotecao nunca seja silenciosa.
+
     param($EmUso)
     if (-not $EmUso -or -not $EmUso.Existe) { return }
     if (-not $EmUso.Fresco) {
@@ -4472,47 +3893,19 @@ function Write-LogEmUso {
 
 function Test-PodeEncerrarSessao {
     param([string]$Nome, [string]$Caminho = '', [int]$ProcId = 0, $EmUso = $null)
-    # Sinalizacao do Local Suite vem ANTES de tudo, e so sabe proteger.
+
     if ($ProcId -gt 0 -and $EmUso -and $EmUso.Fresco -and ($EmUso.Protegidos -contains $ProcId)) { return $false }
-    # A carga do ecossistema vem ANTES de tudo: o processo e python.exe, nome que
-    # nao distingue uma inferencia de 7 GB de um script descartavel. Quem
-    # distingue e o caminho, e errar aqui interrompe um lote de contorno.
+
     if (Test-CaminhoEcossistema $Caminho) { return $false }
-    if (Test-Padrao $Nome $script:SessaoAudio) { return $true }          # audio e periferico: liberado
-    if (Test-Padrao $Nome $script:SessaoEnfeites) { return $true }       # enfeite do Windows: liberado
-    if (Test-Padrao $Nome $script:SessaoPreservar) { return $false }     # clinico, navegador, remoto
+    if (Test-Padrao $Nome $script:SessaoAudio) { return $true }
+    if (Test-Padrao $Nome $script:SessaoEnfeites) { return $true }
+    if (Test-Padrao $Nome $script:SessaoPreservar) { return $false }
     if ((Test-Padrao $Nome $script:Protegidos) -and -not (Test-Padrao $Nome 'msedge|chrome|firefox|CentBrowser')) { return $false }
     return $true
 }
 
-
 function Get-MomentoSessao {
-    # "E o momento certo para rodar isto?"
-    #
-    # Este kit e um app de WINDOWS, nao um app de radioterapia. Ele deixa a
-    # maquina leve para o trabalho do dia comecar, e por isso e para rodar LOGO
-    # APOS LOGAR - antes do ARIA, do MOSAIQ, do Monaco, do Eclipse.
-    #
-    # Rodar no MEIO DO DIA pode encerrar trabalho em curso. As listas de protecao
-    # existem para esse caso: elas sao a REDE, nao o mecanismo principal. O
-    # mecanismo principal e este - dizer que o momento esta errado, com o motivo
-    # na frente, e deixar a pessoa decidir.
-    #
-    # TRES SINAIS, e nenhum decide sozinho:
-    #
-    #   idade da sessao      objetivo e nao contornavel: o explorer DESTA sessao.
-    #                        Nao e uptime da maquina - uptime nao distingue
-    #                        "acabei de logar" de "estou aqui desde as 7h".
-    #   carga em andamento   processo classificado Ecossistema: ha lote rodando.
-    #   app de trabalho      aberto e COM JANELA.
-    #
-    # POR QUE EXIGIR JANELA: agente, bandeja e servico sobem no logon sem ninguem
-    # pedir. Contar isso faria o aviso disparar em TODA execucao, e aviso que
-    # dispara sempre e aviso que ninguem le. Este arquivo ja tem um caso assim -
-    # o alerta de Wi-Fi, que num notebook dispara toda vez.
-    #
-    # E POR QUE NAVEGADOR E OFFICE NAO CONTAM: eles voltam sozinhos no logon por
-    # restauracao de sessao. Estar abertos nao quer dizer que o trabalho comecou.
+
     $r = [pscustomobject]@{
         IdadeMin    = $null
         Recem       = $false
@@ -4543,7 +3936,7 @@ function Get-MomentoSessao {
     } catch { }
 
     if ($null -eq $r.IdadeMin) {
-        # Nao saber a idade nao vira "esta tudo bem". Vira "nao sei", e o texto diz.
+
         $r.Veredicto = 'INDEFINIDO'
         $r.Texto = 'Nao consegui medir ha quanto tempo esta sessao esta aberta.'
         $r.Detalhe = 'Rode o kit logo depois de logar. No meio do dia ele pode encerrar trabalho em curso.'
@@ -4568,7 +3961,7 @@ function Get-MomentoSessao {
 }
 
 function Write-MomentoSessao {
-    # Imprime o veredicto de momento no log, no idioma do resto do modulo.
+
     param($Momento)
     if (-not $Momento) { return }
     Write-Log '' 'DADO'
@@ -4583,28 +3976,7 @@ function Write-MomentoSessao {
 }
 
 function Get-ProcessosSessao {
-    # Por padrao, SO a sessao deste usuario - que e a unica onde o kit age.
-    #
-    # -TodasAsSessoes existe EXCLUSIVAMENTE PARA RELATORIO, e nenhum caminho de
-    # acao chama com ele. Serve para um caso concreto: se o operador roda o kit
-    # numa sessao diferente da que hospeda o trabalho, a classe Ecossistema sai
-    # vazia e o relatorio afirma que nao ha nada em andamento. Correto para
-    # aquela sessao, enganoso como retrato da maquina.
-    #
-    # Medido sem admin: WorkingSet64 e MainWindowHandle legiveis em 40 de 40
-    # processos de outra sessao, zero falhas.
-    #
-    # O RESULTADO FICA GUARDADO POR OPERACAO, e isso e seguro por um motivo
-    # especifico que nao se deve perder de vista: esta lista existe para MOSTRAR
-    # e para montar o plano, nunca para decidir um encerramento. Quem decide e
-    # Test-PodeEncerrarSessao, chamada pelo executor com o caminho lido ao vivo
-    # e a sinalizacao relida do disco, PID por PID. Se um dia alguem usar esta
-    # lista para decidir, o prazo dela passa a importar e este comentario esta
-    # errado.
-    #
-    # A analise chamava esta funcao quatro vezes - duas por Get-GruposSessao, uma
-    # pelo relatorio, uma com -TodasAsSessoes -, e cada uma refazia o percurso
-    # inteiro de ~350 processos. Medido: 1,5 a 2,5 s por chamada.
+
     param([switch]$TodasAsSessoes)
     $chave = if ($TodasAsSessoes) { 'todas' } else { 'minha' }
     if ($script:SnapSessao -and $script:SnapSessao.ContainsKey($chave)) { return $script:SnapSessao[$chave] }
@@ -4612,19 +3984,16 @@ function Get-ProcessosSessao {
     $eu = try { (Get-Process -Id $PID).SessionId } catch { 1 }
     $caminhos = Get-CaminhosProcesso
     $emUso = Get-AppEmUso
-    # -contains sobre array e busca linear, e aqui seria uma por processo. Com o
-    # Local Suite segmentando, Protegidos tem a descendencia inteira.
+
     $protSet = @{}
     foreach ($id in $emUso.Protegidos) { $protSet[[int]$id] = $true }
     $saida = New-Object System.Collections.ArrayList
     try {
         foreach ($p in (Get-Process -ErrorAction SilentlyContinue)) {
-            if (-not $TodasAsSessoes -and $p.SessionId -ne $eu) { continue }   # servico ou outro usuario
+            if (-not $TodasAsSessoes -and $p.SessionId -ne $eu) { continue }
             if ($p.Id -eq $PID) { continue }
             $nome = $p.ProcessName
-            # Ao vivo, com o instantaneo de reforco: processo nascido depois do
-            # retrato tem de aparecer como Ecossistema no relatorio tambem, senao
-            # o kit mostra ao usuario uma classificacao que o executor nao segue.
+
             $cam  = Get-CaminhoAoVivo -Processo $p -Mapa $caminhos
             if ($emUso.Fresco -and $protSet.ContainsKey([int]$p.Id)) {
                 $classe = 'Ecossistema'
@@ -4652,11 +4021,9 @@ function Get-ProcessosSessao {
 }
 
 function Get-GruposSessao {
-    # Mesmo acordo de Get-ProcessosSessao: agrupamento para MOSTRAR e para montar
-    # o plano, nunca para decidir. Guardado por operacao porque a analise chama
-    # duas vezes - o relatorio e Get-PlanoSessao.
+
     if ($script:SnapGrupos) { return $script:SnapGrupos }
-    # Agrupa os dispensaveis por nome, separando quem tem janela aberta.
+
     $procs = @(Get-ProcessosSessao | Where-Object { $_.Classe -eq 'Dispensavel' })
     $conhecidos = 'OneDrive|OneDriveStandaloneUpdater|Teams|ms-teams|msteams|Update|Updater|GoogleUpdate|EdgeUpdate|MicrosoftEdgeUpdate|AdobeARM|AdobeGCClient|armsvc|jusched|jucheck|jp2launcher|Squirrel|SCNotification|Notification|Toast|UserOOBEBroker|CompPkgSrv|WindowsInternal|CCXProcess|Creative|CCLibrary|AdobeIPC|AdobeNotification|GameBar|Xbox|Gaming|NVIDIA Share|NVIDIA Web|YourPhone|PhoneExperience|Widget|SearchApp|Cortana|Copilot|SupportAssist|DellSupport|HPSupport|HPPrint|Vantage|ImController|McUICnt|Spotify|Dropbox|Box|GoogleDriveFS|Zoom|Slack|Discord|Skype|Steam|EpicGamesLauncher|EpicWebHelper|iTunesHelper|AppleMobileDevice|iPodService|StartMenuExperienceHost|ShellExperienceHost|TextInputHost|WindowsInternal'
     $conhecidos = $conhecidos + '|' + $script:SessaoAudio + '|' + $script:SessaoEnfeites
@@ -4678,28 +4045,19 @@ function Get-GruposSessao {
 }
 
 function Get-TarefasEmExecucao {
-    # Get-ScheduledTask custa de 2,5 a 4 s medidos, e e o passo mais lento da
-    # analise do Modulo 5. Medi as alternativas e nenhuma serve: schtasks /query
-    # custa 10,6 s, com /v custa 60 s, enumerar pasta por pasta custa 9,9 s, e
-    # filtrar so a raiz economiza 0,8 s mas PERDE 14 tarefas - inclusive as de
-    # subpasta como \McAfee\wps\. O custo e inerente; o que da para melhorar e
-    # dizer ao usuario que o kit esta nisso, em vez de deixar a janela parada.
+
     Set-Status 'Lendo tarefas agendadas (alguns segundos)...'
     Pump
     $lista = @()
     try {
         foreach ($t in (Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.State -eq 'Running' })) {
-            if ("$($t.TaskPath)" -like '\Microsoft\Windows\*') { continue }   # tarefa de sistema: so o TI para
+            if ("$($t.TaskPath)" -like '\Microsoft\Windows\*') { continue }
 
-            # Acao apontando para a arvore do ecossistema: e o lote de contorno
-            # preparando material para o dia seguinte. Parar isso as 2h da manha
-            # nao tem ninguem para notar, e de manha ha um caso a menos sem
-            # explicacao. Nem entra na lista - nao e questao de vir desmarcado.
             $exes = @()
             try { $exes = @($t.Actions | ForEach-Object { "$($_.Execute)" } | Where-Object { $_ }) } catch { }
             $doEcossistema = $false
             foreach ($x in $exes) {
-                # o Execute vem com aspas, e as vezes com %VARIAVEL% por expandir
+
                 $limpo = [Environment]::ExpandEnvironmentVariables(($x -replace '"', ''))
                 if (Test-CaminhoEcossistema $limpo) { $doEcossistema = $true; break }
             }
@@ -4719,9 +4077,6 @@ function Invoke-DiagSessaoAtiva {
     $todos = Get-ProcessosSessao
     if ($todos.Count -eq 0) { Write-Log 'Nao foi possivel mapear os processos da sessao.' 'ALERTA'; return }
 
-    # Censo antes dos numeros, para a propria linha carregar a ressalva em vez de
-    # depender de quem le lembrar dela. As classes abaixo valem para ESTA sessao,
-    # que e a unica em que o kit age.
     $euId = try { (Get-Process -Id $PID).SessionId } catch { 1 }
     $maquina = @(Get-ProcessosSessao -TodasAsSessoes)
     $qtdSessoes = @($maquina | Select-Object -ExpandProperty Sessao -Unique).Count
@@ -4741,11 +4096,6 @@ function Invoke-DiagSessaoAtiva {
         Add-ItemInv 'Sessao' $c ("$($g.Count) processos") ((Format-Bytes $mem) + " | sessao $euId")
     }
 
-    # Carga do ecossistema FORA desta sessao. Reporto so isto das outras sessoes,
-    # de proposito: classificar processo de sessao 0 como "dispensavel" daria um
-    # numero que o kit nunca pode realizar - ali quem age e o TI, com elevacao.
-    # Numero de maquina errada apresentado como numero da maquina certa e pior
-    # que numero nenhum.
     $ecoFora = @($maquina | Where-Object { $_.Classe -eq 'Ecossistema' -and -not $_.Minha })
     if ($ecoFora.Count -gt 0) {
         Write-Log '' 'DADO'
@@ -4756,11 +4106,6 @@ function Invoke-DiagSessaoAtiva {
         Add-ItemInv 'Sessao' 'Carga do ecossistema fora desta sessao' ("$($ecoFora.Count) processos") (Format-Bytes (($ecoFora | Measure-Object Memoria -Sum).Sum))
     }
 
-    # Carga do ecossistema merece linha propria: se ha inferencia em curso, o
-    # usuario precisa saber ANTES de pedir otimizacao agressiva.
-    # O achado olha a MAQUINA, nao a sessao: trabalho em andamento noutra sessao
-    # continua sendo trabalho em andamento, e quem vai clicar em otimizar precisa
-    # saber. So a lista detalhada fica na propria sessao.
     Write-LogEmUso (Get-AppEmUso)
     $eco = @($todos | Where-Object { $_.Classe -eq 'Ecossistema' })
     $ecoMaquina = @($maquina | Where-Object { $_.Classe -eq 'Ecossistema' })
@@ -4787,7 +4132,6 @@ function Invoke-DiagSessaoAtiva {
         }
     }
 
-    # estacao cabeada nao precisa de Bluetooth ligado
     try {
         $bt = @(Get-SnapshotSvc | Where-Object { $_.Name -eq 'bthserv' -and $_.State -eq 'Running' })
         $cabo = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'Wi-?Fi|Wireless|802\.11' })
@@ -4814,13 +4158,8 @@ function Invoke-DiagSessaoAtiva {
 function Get-PlanoSessao {
     $plano = New-Object System.Collections.ArrayList
 
-    # ---- 1. encerrar dispensaveis ----
     foreach ($g in (Get-GruposSessao)) {
-        # Desconhecido COM janela ja vinha desmarcado - alguem esta olhando para
-        # ele. Mas desconhecido SEM janela vinha MARCADO, e carga de fundo pesada
-        # e exatamente isso: um lote de contorno rodando por um interpretador fora
-        # da arvore instalada, um worker que o kit nao catalogou. A janela protege
-        # quem esta na frente da tela; nao protege quem trabalha de madrugada.
+
         $pesadoDesconhecido = ((-not $g.Conhecido) -and $g.Memoria -gt ($script:Lim.SessaoDesconhecidoMB * 1MB))
         $marcar = ((-not $g.TemJanela) -or $g.Conhecido) -and (-not $pesadoDesconhecido)
         $nota = if ($pesadoDesconhecido) {
@@ -4839,12 +4178,8 @@ function Get-PlanoSessao {
         })
     }
 
-    # ---- 2. parar tarefas agendadas em execucao ----
     foreach ($t in (Get-TarefasEmExecucao)) {
-        # "Volta no proximo agendamento" sem dizer quando e promessa vazia: para um
-        # lote noturno o proximo agendamento e a noite seguinte. Diz a data, e se o
-        # retorno esta longe vem DESMARCADO - quem marca e o usuario, mesma regra do
-        # programa nao reconhecido com janela aberta.
+
         $marcarT = $true
         $notaT   = 'Volta a rodar no proximo agendamento.'
         if ($t.Proxima) {
@@ -4865,14 +4200,12 @@ function Get-PlanoSessao {
         })
     }
 
-    # ---- 3. prioridade de CPU para o que e clinico ----
     [void]$plano.Add([pscustomobject]@{
         Grupo = 'PRIORIDADE'; Rotulo = 'Dar prioridade de CPU ao Citrix, prontuario e Office'; Valor = ''; Bytes = 0
         Marcar = $true; Dados = 'prioridade'
         Nota = 'Sobe o clinico para acima do normal e rebaixa o resto. Zera no proximo logon.'
     })
 
-    # ---- 4. devolver memoria dos programas que ficam ----
     [void]$plano.Add([pscustomobject]@{
         Grupo = 'MEMORIA'; Rotulo = 'Compactar a memoria dos programas que ficam abertos'; Valor = ''; Bytes = 0
         Marcar = $true; Dados = 'trim'
@@ -4889,11 +4222,8 @@ function Invoke-Modulo7Sessao {
     Write-Log 'Citrix, navegador do prontuario, navegador web, Office e acesso remoto ficam sempre de fora.' 'DADO'
     Write-Log 'Audio e microfone sao encerrados: o som continua funcionando, sai so a camada de realce.' 'DADO'
 
-    # O MOMENTO vem antes de tudo. Rodar logo apos o logon e o que torna este kit
-    # seguro; as listas de protecao sao a rede para quem rodar fora de hora.
     Write-MomentoSessao (Get-MomentoSessao)
 
-    # em maquina que hospeda servico, otimizar a sessao pede combinado previo
     try {
         $procs = @(Get-Process -ErrorAction SilentlyContinue)
         $svcs = Get-SnapshotSvc
@@ -4949,9 +4279,6 @@ function Invoke-Modulo7Sessao {
     $script:PainelLimpeza.Visible = $true
 }
 
-# ---------------------------------------------------------------------
-# Painel de status da sessao otimizada
-# ---------------------------------------------------------------------
 function Get-ResumoPreservados {
     $eu = try { (Get-Process -Id $PID).SessionId } catch { 1 }
     $procs = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $eu })
@@ -5000,7 +4327,6 @@ function Show-StatusSessao {
     }
     Add-LinhaStatus ''
 
-    # ---- memoria ----
     Add-LinhaStatus 'MEMORIA' $script:Cor.Titulo
     if ($Estado -eq 'OTIMIZADA' -and $script:StatusSessao) {
         $tot = $script:StatusSessao.MemDevolvida + $script:StatusSessao.MemCompactada
@@ -5016,7 +4342,6 @@ function Show-StatusSessao {
     } catch { }
     Add-LinhaStatus ''
 
-    # ---- encerrados ----
     if ($Estado -eq 'OTIMIZADA' -and $script:StatusSessao -and $script:StatusSessao.Encerrados.Count -gt 0) {
         Add-LinhaStatus ('ENCERRADOS NESTA SESSAO ({0})' -f $script:StatusSessao.Encerrados.Count) $script:Cor.Titulo
         foreach ($n in ($script:StatusSessao.Encerrados | Select-Object -Unique)) {
@@ -5025,14 +4350,12 @@ function Show-StatusSessao {
         Add-LinhaStatus ''
     }
 
-    # ---- prioridade ----
     if ($Estado -eq 'OTIMIZADA' -and $script:UltimaPrioridade) {
         Add-LinhaStatus 'PRIORIDADE DE CPU' $script:Cor.Titulo
         Add-LinhaStatus ('  {0} clinico(s) acima do normal, {1} abaixo' -f $script:UltimaPrioridade.Acima, $script:UltimaPrioridade.Abaixo)
         Add-LinhaStatus ''
     }
 
-    # ---- preservado e rodando agora ----
     Add-LinhaStatus 'PRESERVADO E RODANDO AGORA' $script:Cor.Titulo
     $pres = Get-ResumoPreservados
     if ($pres.Count -eq 0) {
@@ -5055,7 +4378,6 @@ function Show-StatusSessao {
     $script:TxtSessao.SelectionStart = 0
     $script:TxtSessao.ScrollToCaret()
 
-    # a lista do que seria aplicado sai de cena
     $script:ListaLimpeza.Items.Clear()
     $script:PlanoAtual = @()
     $script:PainelLimpeza.Visible = $false
@@ -5068,7 +4390,6 @@ function Invoke-RestaurarSessao {
     Write-Titulo 'Restaurar a sessao'
     Write-Log 'Devolve as prioridades ao normal e reabre o que foi encerrado no Modulo 5.' 'DADO'
 
-    # ---- 1. prioridades de volta ao normal ----
     $eu = try { (Get-Process -Id $PID).SessionId } catch { 1 }
     $n = 0
     foreach ($p in (Get-Process -ErrorAction SilentlyContinue)) {
@@ -5082,7 +4403,6 @@ function Invoke-RestaurarSessao {
     }
     Write-Log ('Prioridade normalizada em {0} programa(s).' -f $n) 'OK'
 
-    # ---- 2. reabrir o que se sabe reabrir ----
     $e = Read-Estado
     $fechados = @()
     if ($e.ContainsKey('sessao_encerrados')) { $fechados = @($e['sessao_encerrados']) }
@@ -5093,16 +4413,6 @@ function Invoke-RestaurarSessao {
         Write-Log ('Registro do Modulo 5: {0} programa(s) encerrado(s).' -f $fechados.Count) 'DADO'
     }
 
-    # O Google Drive instala versoes lado a lado, entao o caminho nao pode ser
-    # fixo. Medido nesta maquina: 130.0.2.0 e 131.0.2.0 instaladas e a que rodava
-    # era a 130 - ou seja, a mais nova instalada NAO e necessariamente a que esta
-    # em execucao. A lista vai da mais nova para a mais antiga e o laco de
-    # restauracao tenta uma por uma ate alguma abrir, entao errar a primeira
-    # apenas cai para a seguinte.
-    #
-    # Sem isso o kit fechava o Drive e nao sabia reabrir: a sincronizacao de
-    # C:\AI_PROJETOS e a entrega em C:\AI_DEPLOY ficavam paradas sem ninguem notar,
-    # ate a publicacao seguinte falhar em silencio.
     $driveFs = @()
     try {
         foreach ($base in @((Join-Path $env:ProgramFiles 'Google\Drive File Stream'),
@@ -5149,7 +4459,6 @@ function Invoke-RestaurarSessao {
         if (-not $abriu) { Write-Log ('{0}: nao encontrei o executavel para reabrir. Abra pelo menu Iniciar.' -f $m.Rotulo) 'ALERTA' }
     }
 
-    # ---- 3. o que volta sozinho ----
     $sozinhos = @($fechados | Where-Object { "$_" -match 'SearchApp|ShellExperience|StartMenu|TextInput|Notification|Update|jusched|jucheck|Broker|CompPkgSrv|Widget|Copilot|Audio|Waves|Nahimic|Realtek|RAVBg|Rtk|Dolby|DTS|Logi|iCUE' })
     if ($sozinhos.Count -gt 0) {
         Write-Log '' 'DADO'
@@ -5158,7 +4467,6 @@ function Invoke-RestaurarSessao {
         Write-Log 'A camada de audio e os icones de bandeja voltam no proximo logon.' 'DADO'
     }
 
-    # limpa o registro: a sessao foi restaurada
     try {
         $e2 = Read-Estado
         if ($e2.ContainsKey('sessao_encerrados')) {
@@ -5173,9 +4481,7 @@ function Invoke-RestaurarSessao {
 }
 
 function Invoke-AcaoPrioridade {
-    # PRIORIDADE e MEMORIA sao os dois ultimos grupos da ordem de execucao, logo
-    # rodam na maior distancia possivel do instantaneo. Por isso renovam: o
-    # retrato do inicio do lote nao descreve mais a maquina.
+
     $eu = try { (Get-Process -Id $PID).SessionId } catch { 1 }
     $emUso = Get-EmUsoOperacao -Renovar
     $caminhos = Get-CaminhosProcesso
@@ -5199,12 +4505,7 @@ function Invoke-AcaoPrioridade {
 }
 
 function Invoke-AcaoMemoria {
-    # Usa so as propriedades do .NET. A versao anterior compilava uma funcao do
-    # Windows em tempo de execucao - desnecessario, e o metodo abaixo funciona igual.
-    #
-    # Renova o instantaneo pelo mesmo motivo de Invoke-AcaoPrioridade: e o ultimo
-    # grupo do lote. Pagar a consulta duas vezes no fim de um Aplicar que ja
-    # levou segundos e barato ao lado de compactar uma inferencia de 7 GB.
+
     $eu = try { (Get-Process -Id $PID).SessionId } catch { 1 }
     $emUso = Get-EmUsoOperacao -Renovar
     $caminhos = Get-CaminhosProcesso
@@ -5213,17 +4514,14 @@ function Invoke-AcaoMemoria {
     $n = 0
     foreach ($p in (Get-Process -ErrorAction SilentlyContinue)) {
         if ($p.SessionId -ne $eu -or $p.Id -eq $PID) { continue }
-        # Citrix, imagem clinica, banco local e acesso remoto ficam de fora:
-        # compactar ali causa engasgo visivel na tela.
+
         if (Test-Padrao $p.ProcessName $script:SessaoNaoCompactar) { continue }
-        # Carga do ecossistema: compactar working set de uma inferencia de 7 GB no
-        # meio do lote forca o Windows a paginar tudo de volta. Dano garantido.
+
         if (Test-CaminhoEcossistema (Get-CaminhoAoVivo -Processo $p -Mapa $caminhos)) { continue }
         if ($emUso.Fresco -and ($emUso.Protegidos -contains [int]$p.Id)) { continue }
         try {
             $ws = $p.WorkingSet64
-            # baixar o teto de memoria forca o Windows a devolver as paginas;
-            # em seguida o teto original volta, sem limitar o programa
+
             $minAnt = $p.MinWorkingSet
             $maxAnt = $p.MaxWorkingSet
             $p.MinWorkingSet = [IntPtr]204800
@@ -5271,7 +4569,6 @@ $script:Form.BackColor     = $script:Cor.Fundo
 $script:Form.ForeColor     = $script:Cor.Texto
 $script:Form.Font          = New-Object System.Drawing.Font('Segoe UI', 9)
 
-# --- cabecalho ---
 $cab = New-Object System.Windows.Forms.Panel
 $cab.Dock = 'Top'; $cab.Height = 58; $cab.BackColor = $script:Cor.Painel
 $lblTit = New-Object System.Windows.Forms.Label
@@ -5285,7 +4582,6 @@ $lblSub.ForeColor = $script:Cor.Fraco
 $lblSub.SetBounds(20, 33, 700, 18)
 $cab.Controls.AddRange(@($lblTit, $lblSub))
 
-# --- barra inferior ---
 $rodape = New-Object System.Windows.Forms.Panel
 $rodape.Dock = 'Bottom'; $rodape.Height = 46; $rodape.BackColor = $script:Cor.Painel
 
@@ -5321,7 +4617,6 @@ $script:BtnCancelar.Enabled = $false
 
 $rodape.Controls.AddRange(@($script:LblStatus, $script:Barra, $btnCopiar, $btnSalvar, $btnLimparLog, $script:BtnCancelar))
 
-# --- menu lateral ---
 function New-Secao {
     param([string]$Texto, [int]$Y)
     $l = New-Object System.Windows.Forms.Label
@@ -5357,7 +4652,6 @@ $lateral.Controls.AddRange(@($script:BtnMod1, $script:BtnMod2, $script:BtnMod3,
                              $script:BtnGrandes, $script:BtnSessao, $script:BtnPersist,
                              $sec3, $script:BtnRestaurar, $script:BtnDesfazer, $script:BtnReiniciar, $lblRodape))
 
-# --- painel de limpeza (direita) ---
 function New-BotaoPainel {
     param([string]$Texto, [int]$X, [int]$Y, [int]$L, [int]$A, $Cor = $null, [switch]$Fraco)
     $b = New-Object System.Windows.Forms.Button
@@ -5368,7 +4662,6 @@ function New-BotaoPainel {
     return $b
 }
 
-# ---------------- painel: limpeza ----------------
 $script:PainelLimpeza = New-Object System.Windows.Forms.Panel
 $script:PainelLimpeza.Dock = 'Right'; $script:PainelLimpeza.Width = 520
 $script:PainelLimpeza.BackColor = $script:Cor.Painel
@@ -5423,7 +4716,6 @@ $script:ListaLimpeza.Font = New-Object System.Drawing.Font('Consolas', 9)
 
 $script:PainelLimpeza.Controls.AddRange(@($script:ListaLimpeza, $rodapeLimp, $topoLimp))
 
-# ---------------- painel: arquivos e pastas grandes ----------------
 $script:PainelGrandes = New-Object System.Windows.Forms.Panel
 $script:PainelGrandes.Dock = 'Right'; $script:PainelGrandes.Width = 520
 $script:PainelGrandes.BackColor = $script:Cor.Painel
@@ -5459,7 +4751,6 @@ $script:ListaGrandes.Font = New-Object System.Drawing.Font('Consolas', 9)
 
 $script:PainelGrandes.Controls.AddRange(@($script:ListaGrandes, $rodapeGr, $topoGr))
 
-# ---------------- painel: status da sessao ----------------
 $script:PainelSessao = New-Object System.Windows.Forms.Panel
 $script:PainelSessao.Dock = 'Right'; $script:PainelSessao.Width = 520
 $script:PainelSessao.BackColor = $script:Cor.Painel
@@ -5499,7 +4790,6 @@ $script:TxtSessao.Font = New-Object System.Drawing.Font('Consolas', 9.5)
 
 $script:PainelSessao.Controls.AddRange(@($script:TxtSessao, $rodapeSes, $topoSes))
 
-# --- console de log ---
 $script:Log = New-Object System.Windows.Forms.RichTextBox
 $script:Log.Dock = 'Fill'
 $script:Log.BackColor = $script:Cor.Fundo
@@ -5513,9 +4803,6 @@ $script:Log.DetectUrls = $false
 
 $script:Form.Controls.AddRange(@($script:Log, $script:PainelSessao, $script:PainelGrandes, $script:PainelLimpeza, $lateral, $rodape, $cab))
 
-# =====================================================================
-# 9. EVENTOS
-# =====================================================================
 function Invoke-ComProtecao {
     param([scriptblock]$Bloco, [string]$Nome)
     if ($script:Ocupado) { return }
