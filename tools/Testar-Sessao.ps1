@@ -147,7 +147,8 @@ Write-Host ('  {0} listas de protecao conferidas: nenhuma casa com qualquer cois
 $funcoes = 'Get-SnapshotProc','Get-SnapshotSvc','Clear-SnapshotProc','Clear-SnapshotsOperacao',
            'Get-CaminhosProcesso','Get-CaminhoAoVivo','Get-EmUsoOperacao','Get-AppEmUso',
            'Test-CaminhoEcossistema','Test-PodeEncerrarSessao','Get-ProcessosSessao',
-           'Test-DentroDaPasta','Get-VeredictoArquivo','Get-VeredictoPasta'
+           'Test-DentroDaPasta','Get-VeredictoArquivo','Get-VeredictoPasta',
+           'Test-Padrao'
 foreach ($n in $funcoes) {
     $f = $ast.FindAll({ param($x)
         $x -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $n }, $true)
@@ -291,6 +292,8 @@ try {
     Vale 'e sem ALERTA falso' 0 (@($script:Avisos | Where-Object { $_ -like 'ALERTA*' }).Count)
 
     Write-Host ''
+    if (-not $BS) { $BS = [string][char]92 }
+
     Write-Host '=== 7. o que nunca pode mudar ===' -ForegroundColor Cyan
     Grava-EmUso @($pai.Id)
     Clear-SnapshotsOperacao
@@ -407,6 +410,48 @@ try {
     Vale 'a segunda chamada devolve o mesmo retrato' $true ($cacheado.Count -eq $lista.Count)
     Clear-SnapshotsOperacao
     Vale 'e a limpeza por operacao o descarta' 0 (@($script:SnapSessao.Keys).Count)
+
+    Write-Host ''
+    Write-Host '=== 13. as decisoes valem em qualquer cultura ===' -ForegroundColor Cyan
+    Write-Host '    (defeito: -match herda IgnoreCase da cultura da THREAD. Em turco e azeri'
+    Write-Host "     o I maiusculo baixa para i SEM PONTO, e 'CITRIX' deixava de casar"
+    Write-Host "     'Citrix'. Fail-open: a linha e 'if (-match protegidos) { continue }',"
+    Write-Host '     entao match falho significa NAO pula, ENCERRA)'
+
+
+    Write-Host ''
+    Write-Host '=== 14. agente de backup: protecao desenhada, nao acidental ===' -ForegroundColor Cyan
+    Write-Host "    (antes: 'AcronisAgent' -match 'Onis' devolvia True por coincidencia de"
+    Write-Host '     tres letras com o visualizador DICOM Onis. Funcionava, e sumiria no'
+    Write-Host "     dia em que alguem tirasse 'Onis' da lista)"
+    foreach ($b in @('AcronisAgent', 'AcronisCyberProtect', 'mms', 'VeeamAgent',
+                     'CommVaultCvd', 'cvd', 'TrueImageMonitor', 'MacriumService',
+                     'ReflectMonitor', 'ShadowProtectSvc', 'Arcserve', 'Datto')) {
+        Vale ('backup nao e encerrado: ' + $b) $false (Test-PodeEncerrarSessao -Nome $b -Caminho '' -ProcId 0 -EmUso $null)
+    }
+    # Os curtos tem de ser ANCORADOS: sem ancora, tres letras casam meio Windows.
+    foreach ($n in @('mmc', 'msdtc', 'svchost', 'WmiPrvSE', 'cmd', 'conhost')) {
+        Vale ('ancora do curto nao pega ' + $n) $false ((Test-Padrao $n '^mms$') -or (Test-Padrao $n '^cvd$'))
+    }
+    # E a cobertura nao pode mais DEPENDER do token acidental.
+    Vale 'Acronis coberto por entrada propria, nao por Onis' $true (Test-Padrao 'AcronisAgent' 'Acronis')
+    $culturaVelha = [System.Threading.Thread]::CurrentThread.CurrentCulture
+    try {
+        foreach ($cult in 'pt-BR', 'en-US', 'de-DE', 'tr-TR', 'az-Latn-AZ') {
+            try { [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::new($cult) }
+            catch { Write-Host ('  (cultura ' + $cult + ' indisponivel nesta maquina)') -ForegroundColor DarkGray; continue }
+
+            # Caixa TROCADA de proposito: e a unica forma que expoe o I turco.
+            # Nome igual a entrada da lista passa em qualquer cultura.
+            Vale ($cult + ': CITRIX maiusculo nao e encerrado')  $false (Test-PodeEncerrarSessao -Nome 'CITRIX'   -Caminho '' -ProcId 0 -EmUso $null)
+            Vale ($cult + ': WFICA32 maiusculo nao e encerrado') $false (Test-PodeEncerrarSessao -Nome 'WFICA32'  -Caminho '' -ProcId 0 -EmUso $null)
+            Vale ($cult + ': MOSAIQ maiusculo nao e encerrado')  $false (Test-PodeEncerrarSessao -Nome 'MOSAIQ'   -Caminho '' -ProcId 0 -EmUso $null)
+            Vale ($cult + ': vitrea minusculo nao e encerrado')  $false (Test-PodeEncerrarSessao -Nome 'vitrea'   -Caminho '' -ProcId 0 -EmUso $null)
+            Vale ($cult + ': dispensavel continua encerravel')   $true  (Test-PodeEncerrarSessao -Nome 'Spotify'  -Caminho '' -ProcId 0 -EmUso $null)
+            Vale ($cult + ': marca do ecossistema protege')      $false (Test-PodeEncerrarSessao -Nome 'python' -Caminho ('C:' + $BS + $script:MarcaEcossistema + $BS + 'p.exe') -ProcId 0 -EmUso $null)
+        }
+    }
+    finally { [System.Threading.Thread]::CurrentThread.CurrentCulture = $culturaVelha }
 }
 finally {
     Stop-Process -Id $pai.Id -Force -ErrorAction SilentlyContinue

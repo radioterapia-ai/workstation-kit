@@ -611,7 +611,7 @@ function Invoke-PrepararAmbiente {
 
 # Nunca encerrar nem desativar: clinico, seguranca, rede corporativa,
 # drivers e qualquer programa que possa ter documento aberto.
-$script:Protegidos = 'wfica32|wfcrun32|CDViewer|SelfService|Receiver|concentr|CtxWebHelper|AuthManSvr|redirector|HdxRtcEngine|CtxCFRUI|Citrix|tasy|TasyAgent|CentBrowser|javaw|^java$|jp2launcher|Wheb|Philips|CcmExec|ntrtscan|tmlisten|TMBM|PccNTMon|ShowMsg|smartscreen|unsecapp|SearchProtocolHost|SearchFilterHost|DSASvc|QualysAgent|stAgent|Cortex|cyserver|cytray|cyvera|traps|LsAgent|Quest|OnDemand|ODMActiveDirectory|SecureConnector|ARIA|Eclipse|Varian|Vitrea|MIM|MOSAIQ|RayStation|Monaco|Velocity|Osirix|Horos|Weasis|dicom|PACS|EXCEL|WINWORD|POWERPNT|OUTLOOK|MSACCESS|onenote|StickyNot|msedge|chrome|firefox|iexplore|notepad|wordpad|Acrobat|AcroRd32|AnyConnect|GlobalProtect|FortiClient|Pulse|CcmExec|CmRcService|ccmsetup|CSFalcon|CSAgent|Sophos|SAVService|^mfe|masvc|macmnsvc|McShield|ccSvcHst|SepMaster|ZSA|stAgent|nsdiag|ivanti|LANDesk|Forcepoint|splunk|nxlog|MsMpEng|NisSrv|SecurityHealth|Realtek|RtkAud|IDTNC|Synaptics|igfx|nvcontainer|audiodg|System|Idle|Registry|smss|csrss|wininit|winlogon|^services$|lsass|svchost|fontdrvhost|dwm|explorer|RuntimeBroker|sihost|ctfmon|taskhostw|dllhost|conhost|WmiPrvSE|powershell|pwsh|LogonUI|SearchIndexer'
+$script:Protegidos = 'wfica32|wfcrun32|CDViewer|SelfService|Receiver|concentr|CtxWebHelper|AuthManSvr|redirector|HdxRtcEngine|CtxCFRUI|Citrix|tasy|TasyAgent|CentBrowser|javaw|^java$|jp2launcher|Wheb|Philips|CcmExec|ntrtscan|tmlisten|TMBM|PccNTMon|ShowMsg|smartscreen|unsecapp|SearchProtocolHost|SearchFilterHost|DSASvc|QualysAgent|stAgent|Cortex|cyserver|cytray|cyvera|traps|LsAgent|Quest|OnDemand|ODMActiveDirectory|SecureConnector|ARIA|Eclipse|Varian|Vitrea|MIM|MOSAIQ|RayStation|Monaco|Velocity|Osirix|Horos|Weasis|dicom|PACS|EXCEL|WINWORD|POWERPNT|OUTLOOK|MSACCESS|onenote|StickyNot|msedge|chrome|firefox|iexplore|notepad|wordpad|Acrobat|AcroRd32|AnyConnect|GlobalProtect|FortiClient|Pulse|CcmExec|CmRcService|ccmsetup|CSFalcon|CSAgent|Sophos|SAVService|^mfe|masvc|macmnsvc|McShield|ccSvcHst|SepMaster|ZSA|stAgent|nsdiag|ivanti|LANDesk|Forcepoint|splunk|nxlog|MsMpEng|NisSrv|SecurityHealth|Acronis|^mms$|Veeam|CommVault|^cvd$|^CvMountd$|TrueImage|Macrium|^Reflect|ShadowProtect|Arcserve|Datto|Carbonite|IDriveService|Realtek|RtkAud|IDTNC|Synaptics|igfx|nvcontainer|audiodg|System|Idle|Registry|smss|csrss|wininit|winlogon|^services$|lsass|svchost|fontdrvhost|dwm|explorer|RuntimeBroker|sihost|ctfmon|taskhostw|dllhost|conhost|WmiPrvSE|powershell|pwsh|LogonUI|SearchIndexer'
 
 function Get-CatalogoProcessos {
     @(
@@ -638,7 +638,7 @@ function Get-ProcessosEncerraveis {
     try { $todos = @(Get-Process -ErrorAction SilentlyContinue) } catch { return $saida }
 
     foreach ($c in (Get-CatalogoProcessos)) {
-        $ps = @($todos | Where-Object { $_.ProcessName -match $c.Padrao -and $_.ProcessName -notmatch $script:Protegidos })
+        $ps = @($todos | Where-Object { (Test-Padrao $_.ProcessName $c.Padrao) -and -not (Test-Padrao $_.ProcessName $script:Protegidos) })
         if ($ps.Count -eq 0) { continue }
         $comJanela = @($ps | Where-Object { $_.MainWindowHandle -ne 0 })
         if ($c.Nivel -eq 'SemJanela' -and $comJanela.Count -gt 0) { continue }
@@ -707,7 +707,7 @@ function Get-ItensInicializacao {
             $saida += [pscustomobject]@{ Nome = $i.Nome; Tipo = $i.Tipo; Classe = 'Seguro'; Rotulo = 'Edge abrindo sozinho no logon'; Seguro = $true }
             continue
         }
-        if ($texto -match $script:Protegidos) {
+        if (Test-Padrao $texto $script:Protegidos) {
             $saida += [pscustomobject]@{ Nome = $i.Nome; Tipo = $i.Tipo; Classe = 'Protegido'; Rotulo = 'protegido (seguranca, rede ou clinico)'; Seguro = $false }
             continue
         }
@@ -1639,7 +1639,7 @@ function Get-VeredictoArquivo {
     if ($Arquivo.Name -match '^(hiberfil|pagefile|swapfile)\.sys$')      { return @{ V = 'MANTER';  M = 'Arquivo de sistema do Windows. Apagar quebra a maquina.' } }
     if ($e -match '^\.(mdf|ldf|ndf|bak|trn|dbf)$')                       { return @{ V = 'MANTER';  M = 'Arquivo de banco de dados. Apagar derruba o sistema.' } }
     if (Test-DentroDaPasta -Caminho $p -Pasta $script:PastaClinica)      { return @{ V = 'MANTER';  M = 'Esta na pasta clinica.' } }
-    if ($p -match $script:RaizesClinicas) { return @{ V = 'MANTER'; M = 'Dado de sistema clinico.' } }
+    if (Test-Padrao $p $script:RaizesClinicas) { return @{ V = 'MANTER'; M = 'Dado de sistema clinico.' } }
     if ($p -match '\\CentBrowser')      { return @{ V = 'MANTER'; M = 'CentBrowser e o navegador do prontuario da clinica.' } }
     if ($p -match 'Digitalcore|\\Onis') { return @{ V = 'MANTER'; M = 'Dados do visualizador DICOM Onis.' } }
     if ($p -match '\\Citrix\\')         { return @{ V = 'MANTER'; M = 'Cache do Citrix. Este kit nunca o toca.' } }
@@ -3236,7 +3236,7 @@ $script:LogonSegundos      = 0
                         foreach ($id in $item.Dados.Ids) {
                             try {
                                 $p = Get-Process -Id $id -ErrorAction Stop
-                                if ($p.ProcessName -match $script:Protegidos) { continue }
+                                if (Test-Padrao $p.ProcessName $script:Protegidos) { continue }
                                 $antes += $p.WorkingSet64
                                 if ($p.MainWindowHandle -ne 0) { [void]$p.CloseMainWindow(); Start-Sleep -Milliseconds 500 }
                                 if (-not $p.HasExited) { Stop-Process -Id $id -Force -ErrorAction Stop }
@@ -3874,7 +3874,7 @@ function Set-AjusteStorageSense {
 function Get-VeredictoPasta {
     param([string]$Caminho)
     if (Test-DentroDaPasta -Caminho $Caminho -Pasta $script:PastaClinica)        { return @{ V = 'NAO APAGAR'; M = 'Pasta clinica. Nunca apague.' } }
-    if ($Caminho -match $script:RaizesClinicas) { return @{ V = 'NAO APAGAR'; M = 'Dado de sistema clinico.' } }
+    if (Test-Padrao $Caminho $script:RaizesClinicas) { return @{ V = 'NAO APAGAR'; M = 'Dado de sistema clinico.' } }
     if ($Caminho -match 'SQL Server|Tomcat') { return @{ V = 'NAO APAGAR'; M = 'Aplicativo clinico em uso.' } }
     if ($Caminho -match 'CentBrowser')      { return @{ V = 'NAO APAGAR'; M = 'CentBrowser e o navegador do prontuario da clinica.' } }
     if ($Caminho -match 'Digitalcore|Onis') { return @{ V = 'NAO APAGAR'; M = 'Dados do visualizador DICOM Onis.' } }
@@ -4326,6 +4326,34 @@ function Test-DentroDaPasta {
     return ($prox -eq $sep -or $prox -eq [char]47)
 }
 
+function Test-Padrao {
+    # O texto casa o padrao? Comparacao INDEPENDENTE DE CULTURA, de proposito.
+    #
+    # -match herda IgnoreCase da cultura da THREAD, e em turco e azeri o 'I'
+    # maiusculo baixa para 'i' sem ponto (U+0131), que nao e o 'i' do padrao.
+    # Medido em PowerShell 5.1: sob tr-TR, 'CITRIX' -match 'wfica32|Citrix|tasy'
+    # devolve False, e 'WFICA32' tambem. Nome sem i passa; nome com i em caixa
+    # diferente da entrada da lista, nao.
+    #
+    # A direcao da falha e a pior possivel - a linha do executor e
+    # 'if ($nome -match $protegidos) { continue }', entao match falho significa
+    # NAO pula, ENCERRA. Protecao que desaparece em silencio numa maquina que
+    # ninguem desta casa vai testar.
+    #
+    # Nao depende de o kit oferecer turco: uma estacao turca quebra o aplicativo
+    # de hoje, em portugues, sem ninguem ter escolhido nada.
+    #
+    # Padrao vazio devolve FALSO. '' casaria com tudo em -match, e numa lista de
+    # protecao isso viraria 'protege tudo' - inofensivo, mas mascara o fato de a
+    # lista nao ter carregado. Ver a guarda de listas em tools\Testar-Sessao.ps1.
+    param([string]$Texto, [string]$Padrao)
+    if (-not $Texto -or -not $Padrao) { return $false }
+    try {
+        return [regex]::IsMatch($Texto, $Padrao,
+            [System.Text.RegularExpressions.RegexOptions]'IgnoreCase,CultureInvariant')
+    } catch { return $false }
+}
+
 function Test-CaminhoEcossistema {
     # Carga do proprio ecossistema: inferencia do AUTO_CONTORNO, vigia, CADS.
     # Compara COMPONENTE DE PASTA, nao prefixo: acha C:\RADIOTERAPIA_AI\... e
@@ -4472,10 +4500,10 @@ function Test-PodeEncerrarSessao {
     # nao distingue uma inferencia de 7 GB de um script descartavel. Quem
     # distingue e o caminho, e errar aqui interrompe um lote de contorno.
     if (Test-CaminhoEcossistema $Caminho) { return $false }
-    if ($Nome -match $script:SessaoAudio) { return $true }          # audio e periferico: liberado
-    if ($Nome -match $script:SessaoEnfeites) { return $true }       # enfeite do Windows: liberado
-    if ($Nome -match $script:SessaoPreservar) { return $false }     # clinico, navegador, remoto
-    if ($Nome -match $script:Protegidos -and $Nome -notmatch 'msedge|chrome|firefox|CentBrowser') { return $false }
+    if (Test-Padrao $Nome $script:SessaoAudio) { return $true }          # audio e periferico: liberado
+    if (Test-Padrao $Nome $script:SessaoEnfeites) { return $true }       # enfeite do Windows: liberado
+    if (Test-Padrao $Nome $script:SessaoPreservar) { return $false }     # clinico, navegador, remoto
+    if ((Test-Padrao $Nome $script:Protegidos) -and -not (Test-Padrao $Nome 'msedge|chrome|firefox|CentBrowser')) { return $false }
     return $true
 }
 
@@ -4528,11 +4556,11 @@ function Get-ProcessosSessao {
                 $classe = 'Ecossistema'
             } elseif (Test-CaminhoEcossistema $cam) {
                 $classe = 'Ecossistema'
-            } elseif ($nome -match $script:SessaoAudio -or $nome -match $script:SessaoEnfeites) {
+            } elseif ((Test-Padrao $nome $script:SessaoAudio) -or (Test-Padrao $nome $script:SessaoEnfeites)) {
                 $classe = 'Dispensavel'
-            } elseif ($nome -match $script:SessaoPreservar) {
+            } elseif (Test-Padrao $nome $script:SessaoPreservar) {
                 $classe = 'Preservar'
-            } elseif ($nome -match $script:Protegidos -and $nome -notmatch 'msedge|chrome|firefox|CentBrowser') {
+            } elseif ((Test-Padrao $nome $script:Protegidos) -and -not (Test-Padrao $nome 'msedge|chrome|firefox|CentBrowser')) {
                 $classe = 'Essencial'
             } else {
                 $classe = 'Dispensavel'
@@ -5078,7 +5106,7 @@ function Invoke-AcaoPrioridade {
     foreach ($p in (Get-Process -ErrorAction SilentlyContinue)) {
         if ($p.SessionId -ne $eu -or $p.Id -eq $PID) { continue }
         try {
-            if ($p.ProcessName -match $script:SessaoPreservar -and $p.ProcessName -notmatch $script:SessaoAudio -and $p.ProcessName -notmatch $script:SessaoEnfeites) {
+            if ((Test-Padrao $p.ProcessName $script:SessaoPreservar) -and -not (Test-Padrao $p.ProcessName $script:SessaoAudio) -and -not (Test-Padrao $p.ProcessName $script:SessaoEnfeites)) {
                 $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::AboveNormal
                 $subiu++
             } elseif (Test-PodeEncerrarSessao -Nome $p.ProcessName -Caminho (Get-CaminhoAoVivo -Processo $p -Mapa $caminhos) -ProcId ([int]$p.Id) -EmUso $emUso) {
@@ -5109,7 +5137,7 @@ function Invoke-AcaoMemoria {
         if ($p.SessionId -ne $eu -or $p.Id -eq $PID) { continue }
         # Citrix, imagem clinica, banco local e acesso remoto ficam de fora:
         # compactar ali causa engasgo visivel na tela.
-        if ($p.ProcessName -match $script:SessaoNaoCompactar) { continue }
+        if (Test-Padrao $p.ProcessName $script:SessaoNaoCompactar) { continue }
         # Carga do ecossistema: compactar working set de uma inferencia de 7 GB no
         # meio do lote forca o Windows a paginar tudo de volta. Dano garantido.
         if (Test-CaminhoEcossistema (Get-CaminhoAoVivo -Processo $p -Mapa $caminhos)) { continue }
