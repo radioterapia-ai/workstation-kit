@@ -27,7 +27,7 @@ Trabalho!»* em todas as máquinas, sem ter copiado nada — o caminho estava er
 o erro do `xcopy` estava silenciado. Só apareceu quando alguém acrescentou um
 contador honesto.
 
-`docs/REGRAS-DE-SEGURANCA.md` tem o resto. Leia antes de mexer nas listas.
+`docs/SAFETY.md` tem o resto, em ingles. Leia antes de mexer nas listas.
 
 ---
 
@@ -174,14 +174,23 @@ quebraria o rito que faz a correção chegar.
 
 ## Como trabalhar neste código
 
-### Sempre rode a suíte antes de entregar
+### Sempre rode o portão antes de entregar
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\Testar-Sessao.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Testar-Tudo.ps1
 ```
 
-Ela valida o parse, as duplicatas, o BOM, **confere que as sete listas de proteção
-carregaram íntegras**, e exercita as proteções contra processos de verdade.
+**Um ponto de entrada só, de propósito.** O CI roda exatamente este arquivo: portão
+escrito duas vezes diverge, e a metade que divergiu é sempre a que ninguém olha.
+Ele encadeia cinco etapas — proteções, camada de idioma, vazamento, armadilhas de
+ambiente e caça a defeitos — e sai com a soma das falhas.
+
+A etapa de proteções (`tools\Testar-Sessao.ps1`) valida o parse, as duplicatas, o
+BOM, **confere que as sete listas de proteção carregaram íntegras**, e exercita as
+proteções contra processos de verdade. Ela aceita `-Alvo` para ser exercitada
+contra uma cópia adulterada do aplicativo — é a única forma de provar que um teste
+**reprova** quando deve. Sem isso, um `-Alvo` passado a um script sem bloco `param`
+é descartado em silêncio, tudo passa, e a prova vira teatro. Já aconteceu aqui.
 
 Os blocos são **testes negativos**: cada um monta o caso em que a proteção precisa
 falhar se estiver quebrada. Foi assim que se achou o `[\\/]` que virou `[/]` e
@@ -217,7 +226,7 @@ para decidir**.
 > que dependia de saber passa a depender de quando soube.**
 
 Instantâneo tem prazo, quem decide lê ao vivo, e consulta que falhou não se guarda.
-A regra inteira em `docs/REGRAS-DE-SEGURANCA.md`.
+A regra inteira em `docs/SAFETY.md`.
 
 **E meça antes de reescrever.** No projeto de origem, duas hipóteses sobre onde
 estava o tempo estavam erradas: a acumulação `+=` custava 29 ms e não segundos, e
@@ -258,9 +267,9 @@ distribuição aqui é cópia de arquivo.
 
 | Arquivo | Para quê |
 |---|---|
-| `docs/PROVENIENCIA.md` | de onde veio, o que saiu, e por que sem histórico compartilhado |
-| `docs/REGRAS-DE-SEGURANCA.md` | o que nunca se toca e por quê |
-| `docs/PENDENCIAS.md` | o trabalho da versão universal, em ordem |
+| `docs/SAFETY.md` | o que nunca se toca e por quê — em inglês, é documento público |
+| `docs/LIMITATIONS.md` | o que a cobertura não inclui — em inglês, é documento público |
+| `docs/NOTAS-TECNICAS.md` | os 730 comentários extraídos do código. **Não versionado** |
 
 | Ferramenta | Para quê |
 |---|---|
@@ -293,8 +302,11 @@ conferência nasceu errada.
 O cabeçalho do varredor declara os furos que ele tem — nome corporativo sem TLD,
 UNC de host curto, arquivo binário, nome de pessoa. **Varredor que promete o que
 não cumpre é pior que varredor nenhum**, porque produz a sensação de ter conferido.
-O nome sem TLD é o furo que já morreu na prática: um parágrafo da própria
-`PROVENIENCIA.md` escreveu o domínio do hospital como exemplo do que o varredor não
-pega, e só um `grep` à mão achou.
+O nome sem TLD é o furo que já morreu na prática: um parágrafo que explicava
+o limite do varredor escreveu o domínio do hospital como exemplo do que ele não
+pega, e só um `grep` à mão achou. Quem edita é a última barreira.
 
-Ver `docs/PROVENIENCIA.md`.
+> Este repositório foi criado **sem histórico compartilhado** com o projeto de
+> origem, de propósito: o arquivo de lá tinha 47 identificadores de
+> infraestrutura de um hospital, e história não se desfaz depois.
+

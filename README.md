@@ -96,13 +96,30 @@ they cost nothing to anyone who does not need them.
 > need it leaves dead weight. Failing to protect something that did interrupts
 > someone's work. Doubt is resolved by protecting.
 
-`docs/PENDENCIAS.md` lists, openly, what the coverage does **not** include yet.
+[docs/LIMITATIONS.md](docs/LIMITATIONS.md) lists, openly, what the coverage does
+**not** include yet.
+
+## Languages
+
+**English, Portuguese and Spanish.** Three buttons at the bottom of the left
+panel switch the interface at once — no restart, and the log already written
+stays in the language it was written in, because it is a record of what happened
+rather than a screen to redraw.
+
+The first run guesses from the Windows UI culture and falls back to English. The
+choice is remembered in `HKCU`.
+
+Portuguese is the **source**: those entries are the original text, and the other
+two are translations of it. The gate enforces **placeholder parity** — a
+translation with fewer `{N}` than the source would make the format operator
+throw, and this app runs with a hidden console where a thrown error ends the step
+in silence.
 
 ## Status
 
-Early. The application runs and the test suite is green, but the language layer
-does not exist yet and there are list entries still to cover. This repository is
-open so the work can be followed, not because it is finished.
+Version 1.0, and honest about its edges: the protection lists do not know every
+vendor, and [docs/LIMITATIONS.md](docs/LIMITATIONS.md) names what is missing and
+why a longer list is not the answer. The gate is green and runs on every push.
 
 ## Running it
 
@@ -112,12 +129,16 @@ Start_WorkstationKit.cmd
 
 Both files must sit in the same folder. PowerShell 5.1, Windows 10 or 11.
 
-Before delivering any change:
+Before delivering any change, run the gate. One entry point, and CI runs exactly
+this — a gate spelled out twice drifts, and the half that drifts is the one nobody
+looks at.
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\Testar-Sessao.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\Verificar-Vazamento.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\Testar-Tudo.ps1
 ```
+
+It exits with the number of failures: protections, language layer, leak scan,
+environment traps and the defect hunt.
 
 ---
 

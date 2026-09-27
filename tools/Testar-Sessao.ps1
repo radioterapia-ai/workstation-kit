@@ -32,13 +32,25 @@
     saem no fim, inclusive se um teste estourar.
 
     Sai com 0 se tudo passou, ou com o numero de falhas.
+
+    -Alvo aponta para outro arquivo, e existe por um motivo so: sem ele nao ha
+    como provar que um teste REPROVA quando deve. Um -Alvo passado a um script
+    sem bloco param e descartado em silencio - a copia adulterada nunca e lida,
+    tudo passa, e a prova vira teatro. Aconteceu neste arquivo.
 #>
+
+# $Alvo e $alvo sao A MESMA variavel: nome de variavel em PowerShell nao
+# distingue caixa. Aqui isso e proposital, e o resto do arquivo continua
+# escrevendo $alvo. E a mesma regra que ja custou tres defeitos neste projeto,
+# usada de proposito em vez de por acidente.
+param([string]$Alvo = '')
 
 $ErrorActionPreference = 'SilentlyContinue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 $raiz  = Split-Path -Parent $PSScriptRoot
-$alvo  = Join-Path $raiz 'WorkstationKit.ps1'
+if (-not $raiz) { $raiz = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path) }
+if (-not $alvo) { $alvo = Join-Path $raiz 'WorkstationKit.ps1' }
 if (-not (Test-Path -LiteralPath $alvo)) { Write-Host "Nao achei $alvo"; exit 1 }
 
 # ---------------------------------------------------------------------
@@ -517,7 +529,21 @@ try {
     # A deteccao, porem, tem de continuar: virou achado, nao desapareceu.
     Vale 'Get-MapeamentosMortos continua existindo'  $true ([bool]($corpo -match 'function Get-MapeamentosMortos'))
     Vale 'Get-CredenciaisOrfas continua existindo'   $true ([bool]($corpo -match 'function Get-CredenciaisOrfas'))
-    Vale 'e os dois viraram Add-Achado'              $true (([regex]::Matches($corpo, 'Add-Achado .+Mapeamento de rede sem resposta')).Count -eq 1 -and ([regex]::Matches($corpo, 'Add-Achado .+Credencial salva de servidor')).Count -eq 1)
+    # As duas frases sairam do codigo quando a camada de idioma entrou: hoje
+    # moram na tabela, e a chamada carrega a CHAVE. So conferir a chave nao
+    # basta - renomear a chave passaria calado, e o achado poderia passar a
+    # dizer outra coisa. Cada par prende as duas metades: o ponto de chamada
+    # e o texto da fonte.
+    $pares = @(
+        @{ Chave = 'planolimpeza.02'; Trecho = 'Mapeamento de rede sem resposta' }
+        @{ Chave = 'planolimpeza.04'; Trecho = 'Credencial salva de servidor' }
+    )
+    foreach ($par in $pares) {
+        $ch = [regex]::Escape($par.Chave)
+        Vale ($par.Chave + ' sai por Add-Achado') 1 ([regex]::Matches($corpo, ("Add-Achado[^\r\n]+T '" + $ch + "'"))).Count
+        $txt = [regex]::Match($corpo, ("(?m)^    '" + $ch + "' = '([^']*)'"))
+        Vale ($par.Chave + ' ainda diz o que dizia') $true ($txt.Success -and $txt.Groups[1].Value.Contains($par.Trecho))
+    }
     # Mas eles CONTINUAM protegidos de encerramento - sao duas perguntas.
     Vale 'e navegador segue protegido de encerrar' $false (Test-PodeEncerrarSessao -Nome 'msedge' -Caminho '' -ProcId 0 -EmUso $null)
     Vale 'e Office segue protegido de encerrar'    $false (Test-PodeEncerrarSessao -Nome 'EXCEL'  -Caminho '' -ProcId 0 -EmUso $null)

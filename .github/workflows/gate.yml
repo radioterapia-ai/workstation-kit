@@ -1,0 +1,92 @@
+name: gate
+
+# The gate blocks. It is not advisory.
+#
+# Two of these checks protect something a review cannot catch by reading:
+#   - the leak scan keeps a third party's network identifiers out of a public
+#     repository, and a repository is public the moment it is pushed;
+#   - the language check enforces placeholder parity, because a translation with
+#     fewer {N} than the source makes the format operator throw, and this app
+#     runs with a hidden console where a thrown error ends the step in silence.
+#
+# Windows PowerShell 5.1 on purpose: that is what the application targets, and a
+# gate that runs on a newer shell than the product is a gate that agrees with
+# code the product will reject.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Which shell is this
+        shell: powershell
+        run: |
+          $PSVersionTable | Format-List PSVersion, PSEdition
+          if ($PSVersionTable.PSVersion.Major -ne 5) {
+            Write-Host "::error::Expected Windows PowerShell 5.1, got $($PSVersionTable.PSVersion)"
+            exit 1
+          }
+
+      - name: Protections
+        shell: powershell
+        run: |
+          & .\tools\Testar-Sessao.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::protection suite failed ($LASTEXITCODE)"; exit $LASTEXITCODE }
+
+      - name: Language layer
+        shell: powershell
+        run: |
+          & .\tools\Testar-Idioma.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::language layer failed ($LASTEXITCODE)"; exit $LASTEXITCODE }
+
+      - name: Leak scan
+        shell: powershell
+        run: |
+          & .\tools\Verificar-Vazamento.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::a third-party identifier would have been published ($LASTEXITCODE)"; exit $LASTEXITCODE }
+
+      - name: Environment traps
+        shell: powershell
+        run: |
+          & .\tools\Testar-Ambiente.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::environment check failed ($LASTEXITCODE)"; exit $LASTEXITCODE }
+
+      - name: Defect hunt
+        shell: powershell
+        run: |
+          & .\tools\Cacar-Defeitos.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::defect hunt found $LASTEXITCODE defect(s)"; exit $LASTEXITCODE }
+
+      - name: The application parses and loads
+        shell: powershell
+        run: |
+          $err = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path .\WorkstationKit.ps1).Path, [ref]$null, [ref]$err)
+          if ($err -and $err.Count) {
+            $err | Select-Object -First 5 | ForEach-Object {
+              Write-Host "::error file=WorkstationKit.ps1,line=$($_.Extent.StartLineNumber)::$($_.Message)" }
+            exit 1
+          }
+          $fns = $ast.FindAll({ param($x)
+            $x -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
+          $dup = @($fns | Group-Object Name | Where-Object Count -gt 1)
+          if ($dup.Count) {
+            $dup | ForEach-Object { Write-Host "::error::duplicate function: $($_.Name)" }
+            exit 1
+          }
+          Write-Host "parse ok - $($fns.Count) functions, no duplicates"

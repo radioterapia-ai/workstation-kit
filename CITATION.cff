@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+title: "Workstation Kit: diagnostics, cleanup and session optimisation for Windows"
+message: >-
+  If this software is useful in your work, a citation is appreciated.
+  It is asked for, not required by the licence.
+type: software
+authors:
+  - family-names: "Braga"
+    given-names: "Henrique Faria"
+    website: "https://radioterapia.ai"
+repository-code: "https://github.com/radioterapia-ai/workstation-kit"
+url: "https://radioterapia.ai"
+abstract: >-
+  A single-file PowerShell application that diagnoses, cleans and optimises the
+  open Windows session on a workstation, without requiring administrator
+  privilege. It closes dispensable processes, stops running scheduled tasks,
+  adjusts CPU priority and compacts memory, and clears temporary files and
+  caches. Nothing it does survives a restart except the files the user chose to
+  delete: it uninstalls nothing, and where a permanent action would be required
+  it reports a finding with the command instead. It carries protection lists for
+  radiation therapy, imaging, health record, remote access, backup and security
+  software, so that a workstation in clinical use is not disturbed. Not a medical
+  device, and not validated for clinical use.
+keywords:
+  - windows
+  - powershell
+  - system administration
+  - workstation management
+  - disk cleanup
+  - session optimisation
+  - radiation oncology
+  - clinical workstation
+license: Apache-2.0

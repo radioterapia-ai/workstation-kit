@@ -1,0 +1,57 @@
+name: A program that should be protected
+description: Software this tool does not know about and could close
+labels: [coverage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The protection lists are incomplete on purpose, and
+        [docs/LIMITATIONS.md](../blob/main/docs/LIMITATIONS.md) says where. This
+        is how they grow.
+  - type: input
+    id: processo
+    attributes:
+      label: Process name
+      description: Exactly as Task Manager spells it, without `.exe`.
+      placeholder: "MyVendorApp"
+    validations:
+      required: true
+  - type: input
+    id: caminho
+    attributes:
+      label: The folder it runs from
+      placeholder: "C:\Program Files\Vendor\Product\\"
+    validations:
+      required: true
+  - type: input
+    id: fabricante
+    attributes:
+      label: Vendor and product
+      placeholder: "Vendor Inc — Product 3.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: categoria
+    attributes:
+      label: What kind of program
+      options:
+        - Treatment planning
+        - Record and verify
+        - Image viewer or PACS
+        - Electronic health record
+        - Published application client
+        - Remote access used by IT
+        - Backup agent
+        - Security agent
+        - Dictation, smartcard or accessibility
+        - Licence manager
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: consequencia
+    attributes:
+      label: What breaks if it is closed
+      description: Be concrete. "Loses the open plan" is more useful than "it is important".
+    validations:
+      required: true

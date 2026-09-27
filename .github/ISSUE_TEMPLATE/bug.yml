@@ -1,0 +1,58 @@
+name: Something went wrong
+description: A process that should not have been closed, a wrong verdict, an error
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a **security** report, do not open an issue — use the Security
+        tab, *Report a vulnerability*. See [SECURITY.md](../blob/main/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you clicked, and what the app did.
+      placeholder: |
+        I clicked Optimize the session, applied, and it closed ...
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The log
+      description: >-
+        The *Copy log* button puts it on the clipboard. Remove anything you do not
+        want public — machine name, user name, server names, file paths with a
+        patient identifier in them.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: process
+    attributes:
+      label: If a process was closed that should not have been
+      description: >-
+        Its name exactly as Task Manager spells it, and the folder it runs from.
+      placeholder: "MyVendorApp  —  C:\Program Files\Vendor\MyVendorApp.exe"
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and UI language
+      placeholder: "Windows 11 23H2, pt-BR"
+    validations:
+      required: true
+  - type: dropdown
+    id: idioma
+    attributes:
+      label: Interface language you had selected
+      options: [English, Portugues, Espanol]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in the window title bar and in the log header.
+      placeholder: "1.0"
+    validations:
+      required: true
