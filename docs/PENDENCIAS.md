@@ -334,6 +334,20 @@ A promessa de hoje tem **três pernas**, não uma:
 > conhece Pinnacle, TomoTherapy, Brainlab, Orthanc nem Dragon **está mentindo com boa
 > intenção**, e a primeira clínica que descobrir isso descobre da pior maneira.
 
+> **CORREÇÃO DE 27/09/2026, depois do enquadramento do autor.** O texto abaixo foi
+> escrito supondo que as listas de proteção eram o mecanismo principal. Não são. O
+> kit é um **app de Windows**, para rodar **logo após logar**, antes de o trabalho
+> do dia ser aberto — e nessa hora não há o que proteger. As listas são a rede para
+> quem rodar fora de hora.
+>
+> A promessa honesta é, portanto, bem mais simples do que a que eu redigi: **rode
+> depois de logar, e o app avisa quando você não rodou.** Isso é verificável sem
+> parque nenhum, porque é uma medição — idade da sessão, carga em andamento, app de
+> trabalho com janela — e não uma afirmação sobre o mundo.
+>
+> O parágrafo abaixo continua valendo para o caso residual: alguém que rode no meio
+> do dia mesmo depois do aviso. Aí, e só aí, a exaustividade das listas importa.
+
 A frase proposta para o fork, que deixa de ser afirmação sobre o resultado e passa a
 ser **propriedade verificável do código**:
 

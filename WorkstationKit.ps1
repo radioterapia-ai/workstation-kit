@@ -132,6 +132,8 @@ $script:Lim = @{
     DiscoAlertaPct  = 15
     RamCritPct      = 90
     RamAlertaPct    = 80
+    # O kit e para rodar LOGO APOS LOGAR. Acima disso, avisa.
+    MomentoRecemMin = 20     # minutos de sessao que ainda contam como 'recem logado'
     UptimeAlertaH   = 72     # horas sem reiniciar
     UptimeCritH     = 168
     CitrixMs        = 3000   # resposta aceitavel do portal Citrix
@@ -3157,18 +3159,29 @@ function Invoke-Modulo3Limpeza {
     $nIni    = @($marcados | Where-Object { $_.Grupo -eq 'INICIAR' }).Count
     $nAju    = @($marcados | Where-Object { $_.Grupo -eq 'AJUSTE' }).Count
 
+    # O MOMENTO abre a caixa, quando nao e o certo. Vem antes da contagem: quem
+    # esta no meio do trabalho precisa ler isso primeiro, nao depois de quatro
+    # linhas de numero.
+    $momento = Get-MomentoSessao
+    $aviso = ''
+    if ($momento.Veredicto -ne 'RECEM') {
+        $aviso = $momento.Texto + "`r`n"
+        if ($momento.Detalhe) { $aviso += $momento.Detalhe + "`r`n" }
+        $aviso += "`r`n"
+    }
+
     if ($script:ModoPlano -eq 'SESSAO') {
         $nSes = @($marcados | Where-Object { $_.Grupo -eq 'SESSAO' }).Count
         $nTar = @($marcados | Where-Object { $_.Grupo -eq 'TAREFA' }).Count
         $memSes = ($marcados | Where-Object { $_.Grupo -eq 'SESSAO' } | Measure-Object Bytes -Sum).Sum
-        $msg = "Otimizar a sessao de agora com {0} itens:`r`n`r`n" -f $marcados.Count
+        $msg = $aviso + ("Otimizar a sessao de agora com {0} itens:`r`n`r`n" -f $marcados.Count)
         $msg += " · Encerrar {0} programa(s), devolvendo cerca de {1}`r`n" -f $nSes, (Format-Bytes $memSes)
         $msg += " · Parar {0} tarefa(s) agendada(s) em execucao`r`n" -f $nTar
         $msg += " · Ajustar prioridade de CPU e compactar memoria`r`n`r`n"
         $msg += "Citrix, navegador do prontuario, navegador web e Office nao sao tocados.`r`n"
         $msg += "Nada e desinstalado: o proximo logon devolve tudo ao normal.`r`n`r`nContinuar?"
     } else {
-        $msg = "Vao ser aplicados {0} itens:`r`n`r`n" -f $marcados.Count
+        $msg = $aviso + ("Vao ser aplicados {0} itens:`r`n`r`n" -f $marcados.Count)
         $msg += " · Liberar cerca de {0} em disco`r`n" -f (Format-Bytes $bytes)
         $msg += " · Encerrar {0} programa(s) dispensavel(is)`r`n" -f $nFechar
         $msg += " · Tirar {0} item(ns) da inicializacao`r`n" -f $nIni
@@ -4090,6 +4103,25 @@ $script:SessaoPreservar = 'wfica32|wfcrun32|CDViewer|SelfService|Receiver|concen
 
 # Programas que ficam abertos mas nao devem ter a memoria compactada:
 # sessao publicada do Citrix, aplicativo clinico de imagem, banco local e acesso remoto.
+# APPS DE TRABALHO: o programa que a pessoa veio usar na maquina.
+#
+# NAO e lista de protecao - essa pergunta e outra, e $script:SessaoPreservar
+# responde. Esta responde "a pessoa JA COMECOU o trabalho do dia?", e serve a
+# Get-MomentoSessao. Os nomes se repetem entre as duas por coincidencia de
+# assunto, nao por duplicacao: se um app clinico sair desta, o kit deixa de
+# avisar que o trabalho comecou, mas continua sem encerrar o app.
+#
+# Citrix entra por wfica32 e wfcrun32, que sao a JANELA da sessao publicada -
+# nao por concentr nem SelfService, que sao bandeja e sobem no logon sem
+# ninguem pedir.
+$script:AppsDeTrabalho =
+    'ARIA|Eclipse|Varian|MOSAIQ|IMPAC|Monaco|Focal|RayStation|RayCare|MIM|Velocity' +
+    '|Pinnacle|Oncentra|XiO|iPlan|Brainlab|Precision|TomoTherapy|Limbus|AutoContour' +
+    '|Vitrea|Vsp|^VI\.|Mirada|Medis|4DM|Corridor|NeuroQ|Olea|TomTec|Onis|Digitalcore' +
+    '|RadiAnt|Weasis|MicroDicom|Horos|dicom|PACS|Sectra|IDS7' +
+    '|wfica32|wfcrun32|CDViewer' +
+    '|tasy|Wheb|^Epic$|EpicSystems|Hyperspace|PowerChart|Cerner|MEDITECH|Soarian'
+
 $script:SessaoNaoCompactar = '^claude$|^claude-code$|^python$|^pythonw$|wfica32|wfcrun32|CDViewer|concentr|Vitrea|Vsp|^VI\.|Mirada|Medis|4DM|Corridor|NeuroQ|Olea|TomTec|ARIA|Eclipse|Varian|MOSAIQ|Monaco|MIM|RayStation|Onis|Digitalcore|sqlservr|Tomcat|w3wp|' + $script:SessaoRemoto
 
 # ---------------------------------------------------------------------
@@ -4508,6 +4540,102 @@ function Test-PodeEncerrarSessao {
 }
 
 
+function Get-MomentoSessao {
+    # "E o momento certo para rodar isto?"
+    #
+    # Este kit e um app de WINDOWS, nao um app de radioterapia. Ele deixa a
+    # maquina leve para o trabalho do dia comecar, e por isso e para rodar LOGO
+    # APOS LOGAR - antes do ARIA, do MOSAIQ, do Monaco, do Eclipse.
+    #
+    # Rodar no MEIO DO DIA pode encerrar trabalho em curso. As listas de protecao
+    # existem para esse caso: elas sao a REDE, nao o mecanismo principal. O
+    # mecanismo principal e este - dizer que o momento esta errado, com o motivo
+    # na frente, e deixar a pessoa decidir.
+    #
+    # TRES SINAIS, e nenhum decide sozinho:
+    #
+    #   idade da sessao      objetivo e nao contornavel: o explorer DESTA sessao.
+    #                        Nao e uptime da maquina - uptime nao distingue
+    #                        "acabei de logar" de "estou aqui desde as 7h".
+    #   carga em andamento   processo classificado Ecossistema: ha lote rodando.
+    #   app de trabalho      aberto e COM JANELA.
+    #
+    # POR QUE EXIGIR JANELA: agente, bandeja e servico sobem no logon sem ninguem
+    # pedir. Contar isso faria o aviso disparar em TODA execucao, e aviso que
+    # dispara sempre e aviso que ninguem le. Este arquivo ja tem um caso assim -
+    # o alerta de Wi-Fi, que num notebook dispara toda vez.
+    #
+    # E POR QUE NAVEGADOR E OFFICE NAO CONTAM: eles voltam sozinhos no logon por
+    # restauracao de sessao. Estar abertos nao quer dizer que o trabalho comecou.
+    $r = [pscustomobject]@{
+        IdadeMin    = $null
+        Recem       = $false
+        Ecossistema = 0
+        Trabalho    = @()
+        Veredicto   = 'INDEFINIDO'
+        Texto       = ''
+        Detalhe     = ''
+    }
+
+    try {
+        $eu = (Get-Process -Id $PID).SessionId
+        $ex = @(Get-Process explorer -ErrorAction SilentlyContinue |
+                Where-Object { $_.SessionId -eq $eu } | Sort-Object StartTime)
+        if ($ex.Count -gt 0) {
+            $r.IdadeMin = [Math]::Round(((Get-Date) - $ex[0].StartTime).TotalMinutes)
+            $r.Recem = ($r.IdadeMin -le $script:Lim.MomentoRecemMin)
+        }
+    } catch { }
+
+    try {
+        $nomes = @()
+        foreach ($p in (Get-ProcessosSessao)) {
+            if ($p.Classe -eq 'Ecossistema') { $r.Ecossistema++; continue }
+            if ($p.TemJanela -and (Test-Padrao $p.Nome $script:AppsDeTrabalho)) { $nomes += $p.Nome }
+        }
+        $r.Trabalho = @($nomes | Sort-Object -Unique)
+    } catch { }
+
+    if ($null -eq $r.IdadeMin) {
+        # Nao saber a idade nao vira "esta tudo bem". Vira "nao sei", e o texto diz.
+        $r.Veredicto = 'INDEFINIDO'
+        $r.Texto = 'Nao consegui medir ha quanto tempo esta sessao esta aberta.'
+        $r.Detalhe = 'Rode o kit logo depois de logar. No meio do dia ele pode encerrar trabalho em curso.'
+    } elseif ($r.Ecossistema -gt 0) {
+        $r.Veredicto = 'EM_USO'
+        $r.Texto = ('Ha {0} processo(s) de carga do ecossistema em andamento nesta sessao.' -f $r.Ecossistema)
+        $r.Detalhe = 'Esses nao entram na lista e nao serao encerrados, mas a maquina esta trabalhando agora.'
+    } elseif ($r.Trabalho.Count -gt 0) {
+        $r.Veredicto = 'EM_USO'
+        $r.Texto = ('O trabalho do dia parece ter comecado: {0} com janela aberta.' -f ($r.Trabalho -join ', '))
+        $r.Detalhe = 'Esses programas estao protegidos e nao serao encerrados. Mas o kit e para rodar ANTES deles.'
+    } elseif (-not $r.Recem) {
+        $r.Veredicto = 'SESSAO_ANTIGA'
+        $r.Texto = ('Esta sessao esta aberta ha {0} minuto(s).' -f $r.IdadeMin)
+        $r.Detalhe = 'Nao vejo trabalho aberto, mas o kit e para rodar logo depois de logar.'
+    } else {
+        $r.Veredicto = 'RECEM'
+        $r.Texto = ('Sessao aberta ha {0} minuto(s), sem trabalho aberto: e o momento certo.' -f $r.IdadeMin)
+        $r.Detalhe = ''
+    }
+    return $r
+}
+
+function Write-MomentoSessao {
+    # Imprime o veredicto de momento no log, no idioma do resto do modulo.
+    param($Momento)
+    if (-not $Momento) { return }
+    Write-Log '' 'DADO'
+    if ($Momento.Veredicto -eq 'RECEM') {
+        Write-Log $Momento.Texto 'OK'
+        return
+    }
+    $nivel = if ($Momento.Veredicto -eq 'EM_USO') { 'CRITICO' } else { 'ALERTA' }
+    Write-Log $Momento.Texto $nivel
+    if ($Momento.Detalhe) { Write-Log $Momento.Detalhe 'ALERTA' }
+    Write-Log 'Este kit e um app de Windows: ele prepara a maquina para o trabalho comecar.' 'DADO'
+}
+
 function Get-ProcessosSessao {
     # Por padrao, SO a sessao deste usuario - que e a unica onde o kit age.
     #
@@ -4814,6 +4942,10 @@ function Invoke-Modulo7Sessao {
     Write-Log 'Nada e desinstalado nem desativado: o proximo logon devolve tudo ao normal.' 'DADO'
     Write-Log 'Citrix, navegador do prontuario, navegador web, Office e acesso remoto ficam sempre de fora.' 'DADO'
     Write-Log 'Audio e microfone sao encerrados: o som continua funcionando, sai so a camada de realce.' 'DADO'
+
+    # O MOMENTO vem antes de tudo. Rodar logo apos o logon e o que torna este kit
+    # seguro; as listas de protecao sao a rede para quem rodar fora de hora.
+    Write-MomentoSessao (Get-MomentoSessao)
 
     # em maquina que hospeda servico, otimizar a sessao pede combinado previo
     try {

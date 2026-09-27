@@ -45,6 +45,43 @@ de tratamento aberta. Aqui vale mais largo e pelo mesmo motivo: a máquina pode
 estar tratando paciente, atendendo alguém no balcão, ou rodando o lote de
 processamento de um consultório.
 
+## O momento é o mecanismo principal, não as listas
+
+**Este é um app de Windows, não um app de radioterapia.** Ele deixa a máquina leve
+para o trabalho do dia começar — e por isso é para rodar **logo após logar**, antes
+de abrir o ARIA, o MOSAIQ, o Monaco, o Eclipse.
+
+Rodar no **meio do dia** pode encerrar trabalho em curso.
+
+> As listas de proteção existem para esse caso: elas são a **rede**, para quem
+> rodar fora de hora. O mecanismo principal é `Get-MomentoSessao`, que diz que o
+> momento está errado, com o motivo na frente, e deixa a pessoa decidir.
+
+Isso reordena a arquitetura de segurança, e vale registrar por que: eu vinha
+tratando as listas como o mecanismo principal, e concluí que a versão universal
+precisaria conhecer o software de **todo fabricante do mundo** para a promessa se
+sustentar. Estava errado pela raiz. Rodando na hora certa, o trabalho ainda não
+está aberto, e não há o que proteger.
+
+### Os três sinais, e por que exigem janela
+
+| Sinal | O que é |
+|---|---|
+| **idade da sessão** | o `explorer` **desta** sessão. Não é uptime da máquina — uptime não distingue "acabei de logar" de "estou aqui desde as 7h" |
+| **carga em andamento** | processo classificado `Ecossistema`: há lote rodando |
+| **app de trabalho aberto** | e **com janela** |
+
+**Janela é exigida de propósito.** Agente, bandeja e serviço sobem no logon sem
+ninguém pedir; contar isso faria o aviso disparar em **toda** execução, e aviso que
+dispara sempre é aviso que ninguém lê. Este mesmo arquivo já tem um caso assim — o
+alerta de Wi-Fi, que num notebook dispara toda vez.
+
+**E navegador e Office não contam.** Eles voltam sozinhos no logon por restauração
+de sessão; estarem abertos não quer dizer que o trabalho começou. Continuam
+protegidos de encerramento — são duas perguntas diferentes, e `$script:AppsDeTrabalho`
+responde a segunda sem interferir na primeira.
+
+
 Quatro listas governam isso, no topo do `.ps1`:
 
 | Lista | O que faz |

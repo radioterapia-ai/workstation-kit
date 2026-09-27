@@ -4,7 +4,15 @@ Prepara, diagnostica e otimiza estações de trabalho Windows. **Roda sem privil
 de administrador**, em máquina corporativa gerenciada.
 
 Serve qualquer computador — de clínica, de consultório, de recepção ou pessoal —, em
-qualquer país, preservando software de radioterapia de qualquer fabricante.
+qualquer país.
+
+> **É um app de Windows, e é para rodar logo após logar na máquina** — antes de
+> abrir o trabalho do dia. Rodar no meio do dia pode encerrar trabalho em curso; o
+> app mede o momento e avisa quando não é a hora.
+>
+> Ele conhece software de radioterapia de vários fabricantes porque foi ali que
+> nasceu, e essa proteção continua valendo. Mas não é um app de radioterapia: é o
+> que prepara a máquina antes de ela ser usada, para qualquer trabalho.
 
 Versão atual: **1.0** · PowerShell 5.1 + WinForms
 
@@ -39,6 +47,9 @@ distribuía a correção para 11 máquinas sem ninguém passar de mesa em mesa.
 | **3 · Limpeza segura** | analisa, marca o que é seguro, aplica |
 | **4 · Arquivos e pastas grandes** | somente leitura; lista e dá veredicto |
 | **5 · Otimizar a sessão de agora** | reversível no próximo logon |
+
+Antes de aplicar, os módulos 3 e 5 dizem se **é a hora certa**: quanto tempo a
+sessão está aberta, se há carga em andamento, e se o trabalho do dia já começou.
 | **6 · Diagnóstico de persistência** | o que volta sozinho a cada logon |
 
 O Módulo 5 é o mais usado, e o mais rápido: no projeto de origem o «Aplicar» caiu de

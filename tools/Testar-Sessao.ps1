@@ -70,7 +70,7 @@ Write-Host '  BOM presente'
 # 2. Carrega as listas e as funcoes REAIS do aplicativo
 #    (nao copias: o teste tem de morrer junto com o codigo que testa)
 # ---------------------------------------------------------------------
-$listas = 'MarcaEcossistema','PastaClinica','Protegidos','SessaoAudio','SessaoEnfeites','SessaoRemoto',
+$listas = 'MarcaEcossistema','AppsDeTrabalho','PastaClinica','Protegidos','SessaoAudio','SessaoEnfeites','SessaoRemoto',
           'SessaoPreservar','SessaoNaoCompactar','RaizesClinicas','Lim','ArquivoEmUso',
           'EmUsoMaxMin','SnapProc','SnapSvc','EmUsoOperacao','SnapProcEm','EmUsoOperacaoEm',
           'SnapMaxSeg','SnapSessao','SnapGrupos'
@@ -112,7 +112,7 @@ foreach ($a in $aCarregar) { Invoke-Expression $a.Extent.Text }
 # o regex compila, o parse passa, e a protecao para de discriminar. So que
 # aqui ela para na direcao SEGURA, e por isso nada quebra e os testes ficam
 # verdes. Uma suite que nao confere as proprias listas nao vale nada.
-$listasRegex = 'Protegidos', 'SessaoPreservar', 'SessaoNaoCompactar', 'SessaoAudio', 'SessaoEnfeites', 'SessaoRemoto', 'RaizesClinicas'
+$listasRegex = 'Protegidos', 'SessaoPreservar', 'SessaoNaoCompactar', 'SessaoAudio', 'SessaoEnfeites', 'SessaoRemoto', 'RaizesClinicas', 'AppsDeTrabalho'
 $ruim = 0
 foreach ($nm in $listasRegex) {
     $v = ''
@@ -148,7 +148,8 @@ $funcoes = 'Get-SnapshotProc','Get-SnapshotSvc','Clear-SnapshotProc','Clear-Snap
            'Get-CaminhosProcesso','Get-CaminhoAoVivo','Get-EmUsoOperacao','Get-AppEmUso',
            'Test-CaminhoEcossistema','Test-PodeEncerrarSessao','Get-ProcessosSessao',
            'Test-DentroDaPasta','Get-VeredictoArquivo','Get-VeredictoPasta',
-           'Test-Padrao'
+           'Test-Padrao',
+           'Get-MomentoSessao','Write-MomentoSessao'
 foreach ($n in $funcoes) {
     $f = $ast.FindAll({ param($x)
         $x -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $n }, $true)
@@ -419,6 +420,43 @@ try {
     Write-Host '     entao match falho significa NAO pula, ENCERRA)'
 
 
+
+    Write-Host ''
+    Write-Host '=== 15. a porta de momento: e a hora certa de rodar isto? ===' -ForegroundColor Cyan
+    Write-Host '    (o kit e para rodar LOGO APOS LOGAR, antes de abrir o trabalho do dia.'
+    Write-Host '     As listas de protecao sao a REDE para quem rodar fora de hora; o'
+    Write-Host '     mecanismo principal e dizer que o momento esta errado)'
+
+    $mom = Get-MomentoSessao
+    Vale 'Get-MomentoSessao devolve objeto, nunca lanca' $true ($null -ne $mom)
+    Vale 'veredicto e um dos quatro conhecidos' $true (@('RECEM','EM_USO','SESSAO_ANTIGA','INDEFINIDO') -contains $mom.Veredicto)
+    Vale 'sempre ha texto para o usuario ler' $true ([bool]$mom.Texto)
+    Vale 'quando nao e o momento, ha o porque' $true ($mom.Veredicto -eq 'RECEM' -or [bool]$mom.Detalhe)
+    Write-Host ('     nesta maquina agora: {0} - {1}' -f $mom.Veredicto, $mom.Texto) -ForegroundColor DarkGray
+
+    # A lista de apps de trabalho responde OUTRA pergunta que as de protecao, e
+    # por isso tem os proprios casos. Ela nao pode casar qualquer coisa - senao a
+    # porta acusa 'trabalho aberto' em toda execucao, e aviso que dispara sempre
+    # e aviso que ninguem le.
+    foreach ($a in @('ARIA', 'MOSAIQ', 'Monaco', 'Eclipse', 'RayStation', 'MIM',
+                     'wfica32', 'Pinnacle', 'Oncentra', 'tasy', 'Hyperspace')) {
+        Vale ('app de trabalho reconhecido: ' + $a) $true (Test-Padrao $a $script:AppsDeTrabalho)
+    }
+    # E o que NAO e trabalho do dia: sobe no logon sozinho, ou e descartavel.
+    foreach ($n in @('Spotify', 'OneDrive', 'Teams', 'msedge', 'chrome', 'EXCEL',
+                     'explorer', 'svchost', 'concentr', 'SelfService', 'zzNaoExiste')) {
+        Vale ('nao conta como trabalho do dia: ' + $n) $false (Test-Padrao $n $script:AppsDeTrabalho)
+    }
+
+    # Navegador e Office FORA da lista e deliberado: eles voltam sozinhos no logon
+    # por restauracao de sessao, e estarem abertos nao quer dizer que o trabalho
+    # comecou. Se algum dia entrarem, a porta passa a disparar sempre.
+    Vale 'navegador nao entra na porta de momento' $false ((Test-Padrao 'msedge' $script:AppsDeTrabalho) -or (Test-Padrao 'chrome' $script:AppsDeTrabalho))
+    Vale 'Office nao entra na porta de momento'    $false ((Test-Padrao 'EXCEL' $script:AppsDeTrabalho) -or (Test-Padrao 'OUTLOOK' $script:AppsDeTrabalho))
+
+    # Mas eles CONTINUAM protegidos de encerramento - sao duas perguntas.
+    Vale 'e navegador segue protegido de encerrar' $false (Test-PodeEncerrarSessao -Nome 'msedge' -Caminho '' -ProcId 0 -EmUso $null)
+    Vale 'e Office segue protegido de encerrar'    $false (Test-PodeEncerrarSessao -Nome 'EXCEL'  -Caminho '' -ProcId 0 -EmUso $null)
     Write-Host ''
     Write-Host '=== 14. agente de backup: protecao desenhada, nao acidental ===' -ForegroundColor Cyan
     Write-Host "    (antes: 'AcronisAgent' -match 'Onis' devolvia True por coincidencia de"
