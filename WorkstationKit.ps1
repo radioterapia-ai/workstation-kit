@@ -23,6 +23,10 @@ try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePo
 
 $script:Versao       = '1.0'
 
+# GUARDA: an empty value here must never become a wildcard. Test-DentroDaPasta
+# short-circuits on empty BEFORE building the -like pattern, because
+# -like ('*' + '' + '*') is -like '**', which matches every path on the disk.
+
 $script:PastaClinica = ''
 
 $script:PastaRelatorios = try { [Environment]::GetFolderPath('MyDocuments') } catch { $env:TEMP }
@@ -111,6 +115,16 @@ function Format-Bytes {
     return ('{0:N0} bytes' -f $Bytes)
 }
 
+# ---------------------------------------------------------------------
+# GUARDA: LANGUAGE LAYER
+#
+# Portuguese is the SOURCE: pt entries are the original strings, verbatim.
+# English and Spanish are translations of those.
+#
+# Two dictionaries, never one. This table is what the app SHOWS. What the app
+# SEARCHES -- $script:Protegidos and the other lists -- is not interface text
+# and is never translated.
+# ---------------------------------------------------------------------
 $script:Idiomas = @(
     [pscustomobject]@{ Cod = 'en'; Nome = 'English' }
     [pscustomobject]@{ Cod = 'pt'; Nome = 'Portugues' }
@@ -2261,6 +2275,14 @@ La mejora en el inicio automático y en los ajustes solo aparece después de rei
 }
 
 function T {
+    # GUARDA: the string the user reads, in the chosen language.
+    #
+    # Three defences, and each one exists because the alternative fails quietly:
+    #   1. unknown language falls back to English, never to nothing;
+    #   2. a missing key returns !!key!! -- VISIBLE. An empty string would make
+    #      the line disappear from the log and nobody would notice;
+    #   3. never throws. This app runs with a hidden console, where a thrown
+    #      error ends the step in silence.
     param([string]$K)
     if (-not $K) { return '' }
     try {
@@ -2275,6 +2297,8 @@ function T {
 }
 
 function Get-IdiomaSalvo {
+    # GUARDA: HKCU, never estado.json -- that file is deleted when the undo
+    # cycle closes, and the language choice must outlive it.
     try {
         $v = (Get-ItemProperty -Path ('HKCU:\Software\' + $script:MarcaApp) -Name 'Idioma' -ErrorAction Stop).Idioma
         if ($v -and (@($script:Idiomas | ForEach-Object { $_.Cod }) -contains $v)) { return [string]$v }
@@ -2292,6 +2316,8 @@ function Save-Idioma {
 }
 
 function Get-IdiomaInicial {
+    # GUARDA: saved choice wins. Otherwise guess from the Windows UI culture and
+    # fall back to English, never to nothing.
     $s = Get-IdiomaSalvo
     if ($s) { return $s }
     $c = ''
@@ -4933,6 +4959,10 @@ function Invoke-Modulo3Limpeza {
     $script:SessaoEncerrados = @()
     $script:ExplorerAtualizado = $false
 $script:LogonSegundos      = 0
+    # GUARDA: compare with the LITERAL, never with (T '...'). ModoPlano is a
+    # control value, not screen text: translating the key would make the mode
+    # stop matching and the window would silently change its title.
+
     Write-Titulo $(if ($script:ModoPlano -eq 'SESSAO') { (T 'modulo3limpeza.10') } else { (T 'modulo3limpeza.11') })
 
     $liberado = 0.0
@@ -5070,6 +5100,9 @@ $script:LogonSegundos      = 0
                         foreach ($id in $item.Dados.Ids) {
                             try {
                                 $pr = Get-Process -Id $id -ErrorAction Stop
+                                # GUARDA: read the path LIVE. A PID recycled since
+                                # the snapshot belongs to whoever holds it now.
+
                                 if (-not (Test-PodeEncerrarSessao -Nome $pr.ProcessName -Caminho ([string]$pr.Path) -ProcId ([int]$pr.Id) -EmUso (Get-EmUsoOperacao))) { continue }
                                 $liberou += $pr.WorkingSet64
                                 if ($pr.MainWindowHandle -ne 0) { [void]$pr.CloseMainWindow(); Start-Sleep -Milliseconds 400 }
@@ -5694,6 +5727,11 @@ $script:SessaoRemoto = 'TeamViewer|tv_w32|tv_x64|uvnc|winvnc|vncserver|tvnserver
     '|CmRcService|CmRcViewer|RcAgent|DameWare|BeyondTrust|bomgar|LogMeIn|LMIGuardian|Splashtop|ZohoAssist' +
     '|quickassist|^msra$|^mstsc$|RdpClip|rdpinit'
 
+# GUARDA: this list MUST be defined BEFORE the two lists that reference it.
+# A reference to a variable not yet assigned returns empty, and an empty
+# alternative in a regular expression matches EVERYTHING: 'a||b' matches any
+# string. In a preservation list that silently means "preserve everything".
+
 $script:AppsDeTrabalho =
     'ARIA|Eclipse|Varian|MOSAIQ|IMPAC|Monaco|Focal|RayStation|RayCare|MIM|Velocity' +
     '|Pinnacle|Oncentra|XiO|iPlan|Brainlab|Precision|TomoTherapy|Limbus|AutoContour' +
@@ -5702,6 +5740,11 @@ $script:AppsDeTrabalho =
     '|RadiAnt|Weasis|MicroDicom|Horos|dicom|PACS|Sectra|IDS7' +
     '|wfica32|wfcrun32|CDViewer' +
     '|tasy|Wheb|^Epic$|EpicSystems|Hyperspace|PowerChart|Cerner|MEDITECH|Soarian'
+
+# GUARDA: the two lists below INCLUDE $script:AppsDeTrabalho instead of
+# repeating its names. Two hand-maintained lists over the same vocabulary
+# diverge, and the one that diverged is the one nobody looks at. By including
+# it, an application that counts as work in progress cannot be closed.
 
 $script:SessaoPreservar = 'wfica32|wfcrun32|CDViewer|SelfService|Receiver|concentr|CtxWebHelper|AuthManSvr|redirector|HdxRtcEngine|CtxCFRUI|Citrix' +
     '|CentBrowser|msedge|chrome|firefox|iexplore|opera|vivaldi|brave' +
@@ -6725,6 +6768,10 @@ function Update-BotoesIdioma {
 }
 
 function Set-IdiomaInterface {
+    # GUARDA: THE LOG IS NEVER REWRITTEN. It is the record of what happened; a
+    # line written in one language stays in it. Rewriting the past would erase
+    # what the user already read.
+
     param([string]$Cod)
     if (-not $Cod -or $Cod -eq $script:Idioma) { return }
     $script:Idioma = $Cod
@@ -6733,6 +6780,9 @@ function Set-IdiomaInterface {
         $lblTit.Text    = (T 'topo.02')
         $lblSub.Text    = ((T 'topo.03') -f $script:Versao, $env:COMPUTERNAME, $env:USERNAME)
         $lblRodape.Text = (T 'topo.15')
+        # GUARDA: THE STATUS IS NEVER REWRITTEN. Switching language mid-operation
+        # must not put a finished-looking word on a screen that is still working.
+
         $script:BtnCancelar.Text  = (T 'topo.08')
         $script:BtnMod2.Text      = (T 'topo.09')
         $script:BtnMod3.Text      = (T 'modulo3limpeza.02')
